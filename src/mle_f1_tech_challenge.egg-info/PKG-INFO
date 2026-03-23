@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: mle-f1-tech-challenge
+Version: 0.1.0
+Summary: Telecommunications Customer Churn Prediction Pipeline
+Requires-Python: >=3.9
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: scikit-learn>=1.2.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: mlflow>=2.0.0
+Requires-Dist: jupyter>=1.0.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: isort>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: pre-commit>=3.0.0; extra == "dev"
