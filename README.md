@@ -6,7 +6,11 @@ O desenvolvimento abrange desde a Análise Exploratória de Dados (EDA) até o t
 
 ## 🗂 Estrutura do Projeto
 
-- `data/`: Datasets raw, processados e features extras.
+- `data/`: Diretório do Data Lake Local.
+  - `raw/`: Dados originais e brutos, imutáveis (ex: `Telco-Customer-Churn.csv`).
+  - `interim/`: Dados intermediários em transformação.
+  - `processed/`: Dados finais, limpos e prontos para modelagem.
+  - `external/`: Dados de fontes de terceiros.
 - `docs/`: Documentações de regras de negócios, arquitetura e anotações.
 - `models/`: Artefatos serializados (pesos de modelo, encodings, etc).
 - `notebooks/`: Notebooks Jupyter para experimentação e análises de dados rápidas.
