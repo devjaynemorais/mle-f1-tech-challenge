@@ -51,6 +51,11 @@ Utilizamos o `pyproject.toml` como a nossa **Single Source of Truth** (única fo
    pip install -e ".[dev]"
    ```
 
+4. Instale o browser headless para exportação de PDF:
+   ```bash
+   playwright install chromium
+   ```
+
 ## 🚀 Execução 
 
 Com o ambiente ativado e dependências resolvidas, você já pode operar todas as faces analíticas do projeto.
@@ -105,6 +110,29 @@ Para abrir os notebooks:
 ```bash
 jupyter notebook
 ```
+
+## 📋 ML Canvas
+
+O ML Canvas do projeto está em `docs/ml_canvas.html` e é renderizado a partir dos dados em `docs/ml_canvas.json`.
+
+Para editar o conteúdo, modifique o `ml_canvas.json` e recarregue a página.
+
+**Opção 1 — Python (terminal):**
+```bash
+cd docs
+python -m http.server 8080
+```
+Acesse [http://localhost:8080/ml_canvas.html](http://localhost:8080/ml_canvas.html) no navegador.
+
+**Opção 2 — VS Code:**
+Instale a extensão [Live Server](https://marketplace.visualstudio.com/items?itemName=ritwickdey.LiveServer), clique com botão direito no `ml_canvas.html` → **"Open with Live Server"**.
+> Vantagem: recarrega automaticamente ao salvar o `ml_canvas.json`.
+
+**Exportar como PDF:**
+```bash
+python docs/export_pdf.py
+```
+Gera `docs/ml_canvas.pdf` em formato A3 paisagem com fidelidade total ao visual do HTML.
 
 ## 📁 Dados
 
