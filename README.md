@@ -40,6 +40,10 @@ Utilizamos o `pyproject.toml` como a nossa **Single Source of Truth** (única fo
      ```bash
      source .venv/bin/activate
      ```
+   - **No Git Bash (Windows)**:
+     ```bash
+     source .venv/Scripts/activate
+     ```
 
 3. Atualize seu `pip` e instale as dependências (com o pacote em modo editável):
    ```bash
@@ -69,3 +73,40 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
   isort .
   ruff check .
   ```
+
+- **Executar o Pipeline Completo** (pré-processamento → features → treino → predição):
+  ```bash
+  python run_pipeline.py
+  ```
+  O pipeline executa automaticamente na seguinte ordem:
+  1. `src/data/make_dataset.py` — carrega e limpa os dados brutos
+  2. `src/features/build_features.py` — engenharia de features
+  3. `src/models/train_model.py` — treina o modelo e registra experimento no MLflow
+  4. `src/models/predict_model.py` — gera predições
+
+- **Visualizar experimentos no MLflow UI**:
+  ```bash
+  mlflow ui
+  ```
+  Acesse [http://localhost:5000](http://localhost:5000) no navegador para ver métricas, parâmetros e artefatos dos experimentos registrados.
+
+## 📓 Notebooks
+
+Os notebooks seguem uma ordem progressiva de análise e experimentação:
+
+| Notebook | Descrição |
+|---|---|
+| `01_exploratory_data_analysis.ipynb` | Análise exploratória dos dados (EDA) |
+| `02_baseline.ipynb` | Modelos baseline (Dummy, Regressão Logística, MLP) |
+| `03_experimentação.ipynb` | Experimentação e refinamento de modelos |
+| `04_modelo_mvp.ipynb` | Modelo final MVP |
+
+Para abrir os notebooks:
+```bash
+jupyter notebook
+```
+
+## 📁 Dados
+
+O dataset utilizado é o **Telco Customer Churn** (`data/raw/Telco-Customer-Churn.csv`).  
+Os dados processados são gerados automaticamente na pasta `data/processed/` ao executar o pipeline.

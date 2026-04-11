@@ -8,8 +8,40 @@ data:
 
   raw_path: data/raw/Telco_customer_churn.xlsx
   interim_path: data/interim/telecom_clean.csv
+  train_path: data/processed/train.csv
+  test_path: data/processed/test.csv
 
 features:
+  target_column: Churn Value
+
+  drop_columns:
+    - CustomerID
+    - City
+    - Churn Score
+
+  categorical_columns:
+    - Gender
+    - Senior Citizen
+    - Partner
+    - Dependents
+    - Phone Service
+    - Multiple Lines
+    - Internet Service
+    - Online Security
+    - Online Backup
+    - Device Protection
+    - Tech Support
+    - Streaming TV
+    - Streaming Movies
+    - Contract
+    - Paperless Billing
+    - Payment Method
+
+  numerical_columns:
+    - Tenure Months
+    - Monthly Charges
+    - Total Charges
+    - CLTV
 
   # =====================
   # REMOÇÃO (baseline)
@@ -78,6 +110,10 @@ features:
 
 model:
   name: logistic_regression
+  random_state: 42
+  test_size: 0.3
+  model_path: models/rf_baseline.pkl
+  scaler_path: models/scaler.pkl
 
   params:
     C: 1.0
