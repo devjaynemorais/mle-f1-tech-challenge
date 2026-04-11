@@ -90,10 +90,24 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
   4. `src/models/predict_model.py` — gera predições
 
 - **Visualizar experimentos no MLflow UI**:
+
+  **Opção 1 — Somente leitura local** (mais simples):
   ```bash
   mlflow ui
   ```
-  Acesse [http://localhost:5000](http://localhost:5000) no navegador para ver métricas, parâmetros e artefatos dos experimentos registrados.
+
+  **Opção 2 — Servidor completo com API REST** (necessário para logar experimentos dos notebooks):
+  ```bash
+  mlflow server --host 127.0.0.1 --port 5000
+  ```
+
+  Acesse [http://localhost:5000](http://localhost:5000) no navegador para ver métricas, parâmetros e artefatos.
+
+  > Para registrar experimentos ao executar os notebooks, suba o servidor antes de abrir o Jupyter:
+  > ```bash
+  > mlflow server --host 127.0.0.1 --port 5000 &
+  > jupyter notebook
+  > ```
 
 ## 📓 Notebooks
 
