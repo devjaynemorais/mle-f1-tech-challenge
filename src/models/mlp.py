@@ -5,6 +5,8 @@ import torch.nn as nn
 
 from src.evaluation.metrics import compute_metrics
 
+DEFAULT_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 class MLP(nn.Module):
     """
@@ -30,7 +32,11 @@ class MLP(nn.Module):
 
 
 def train_epoch(
-    model: nn.Module, dataloader, optimizer, criterion, device: torch.device
+    model: nn.Module,
+    dataloader,
+    optimizer,
+    criterion,
+    device: torch.device = DEFAULT_DEVICE,
 ) -> float:
     """
     Executa uma época de treino.
@@ -61,7 +67,7 @@ def evaluate(
     model: nn.Module,
     dataloader,
     criterion,
-    device: torch.device,
+    device: torch.device = DEFAULT_DEVICE,
     threshold: float = 0.5,
 ) -> tuple:
     """

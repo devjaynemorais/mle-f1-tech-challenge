@@ -6,15 +6,21 @@ O desenvolvimento abrange desde a Análise Exploratória de Dados (EDA) até o t
 
 ## 🗂 Estrutura do Projeto
 
+- `config/`: Arquivos YAML de configuração dos experimentos (features, modelo, validação, MLflow).
 - `data/`: Diretório do Data Lake Local.
-  - `raw/`: Dados originais e brutos, imutáveis (ex: `Telco-Customer-Churn.csv`).
+  - `raw/`: Dados originais e brutos, imutáveis (ex: `Telco_customer_churn.xlsx`).
   - `interim/`: Dados intermediários em transformação.
   - `processed/`: Dados finais, limpos e prontos para modelagem.
   - `external/`: Dados de fontes de terceiros.
 - `docs/`: Documentações de regras de negócios, arquitetura e anotações.
-- `models/`: Artefatos serializados (pesos de modelo, encodings, etc).
-- `notebooks/`: Notebooks Jupyter para experimentação e análises de dados rápidas.
-- `src/`: Código e pipelines de pré-processamento, modelo, avaliação e a API final.
+- `models/`: Artefatos serializados gerados pelo pipeline (pesos `.pth`, modelos `.pkl`, scalers).
+- `notebooks/`: Notebooks Jupyter para experimentação e análises de dados.
+- `src/`: Pacotes Python do projeto, organizados por responsabilidade:
+  - `src/data/`: Carga, limpeza e divisão dos dados brutos.
+  - `src/features/`: Engenharia de features e encoders customizados.
+  - `src/models/`: Arquitetura MLP (PyTorch), treino, predição e orquestração de experimentos.
+  - `src/evaluation/`: Métricas ML (`compute_metrics`) e métricas de negócio (CLTV, perda esperada).
+  - `src/utils/`: Funções auxiliares de EDA, plots e estatísticas.
 - `tests/`: Suítes de testes automatizados com `pytest`.
 
 ## ⚙️ Configuração (Setup)
@@ -83,7 +89,7 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
   ```bash
   python run_pipeline.py
   ```
-  O pipeline executa automaticamente na seguinte ordem:
+  O pipeline executa automaticamente na seguinte ordem, usando `config/config.yaml`:
   1. `src/data/make_dataset.py` — carrega e limpa os dados brutos
   2. `src/features/build_features.py` — engenharia de features
   3. `src/models/train_model.py` — treina o modelo e registra experimento no MLflow
@@ -108,6 +114,48 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
   > mlflow server --host 127.0.0.1 --port 5000 &
   > jupyter notebook
   > ```
+
+## ⚗️ Configuração de Experimentos
+
+Os experimentos são controlados por arquivos YAML em `config/`. Cada arquivo define as features ativas, o modelo, a validação cruzada e as configurações do MLflow.
+
+| Arquivo | Descrição |
+|---|---|
+| `config.yaml` | Configuração principal usada pelo `run_pipeline.py` |
+| `base_exp.yaml` | Template de baseline — todas as features desativadas |
+| `mvp.yaml` | Configuração do modelo MVP |
+
+### Ativando e desativando features
+
+Cada feature de engenharia pode ser ligada/desligada diretamente no YAML, sem alterar código:
+
+```yaml
+# config/base_exp.yaml
+features:
+  engagement_score:
+    enabled: true   # ativa score de serviços contratados
+
+  valuable_high_risk:
+    enabled: false  # desativa flag de clientes valiosos com alto risco
+```
+
+### Rodando um experimento com validação cruzada
+
+O módulo `src/models/run_experiment.py` orquestra a experimentação: aplica as features configuradas, executa validação cruzada estratificada e loga métricas e parâmetros no MLflow.
+
+Para usar, carregue um YAML e chame `run_experiment()` — como feito nos notebooks `03` e `04`:
+
+```python
+import yaml
+from src.models.run_experiment import run_experiment
+
+with open("config/base_exp.yaml") as f:
+    config = yaml.safe_load(f)
+
+metrics = run_experiment(df, config)
+```
+
+As métricas logadas incluem: `roc_auc`, `f1`, `recall` (média e desvio padrão), além de KPIs de negócio — `captured_value`, `expected_loss` e `capture_value_ratio` baseados no CLTV dos clientes.
 
 ## 📓 Notebooks
 
