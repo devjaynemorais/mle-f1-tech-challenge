@@ -42,6 +42,8 @@ env/
 logs/
 *.log
 mlruns/
+mlartifacts/
+*.db
 wandb/
 artifacts/
 
