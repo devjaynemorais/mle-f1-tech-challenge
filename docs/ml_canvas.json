@@ -1,0 +1,102 @@
+{
+  "business_drivers": {
+    "problema": "A operadora apresenta alta taxa de churn mensal, impactando negativamente a receita recorrente (MRR) e aumentando o custo de aquisição de clientes (CAC).",
+    "stakeholders": [
+      "Diretoria (definição de metas e ROI)",
+      "Marketing/CRM (execução de campanhas de retenção)",
+      "Customer Success (intervenção direta junto a clientes em risco)",
+      "Equipe de Dados (desenvolvimento, validação e manutenção do modelo)"
+    ],
+    "metricas": {
+      "kpi_principal": "Churn Rate",
+      "impacto_financeiro": "LTV (Lifetime Value)",
+      "eficiencia": "Taxa de Conversão da Intervenção",
+      "roi": "Custo de Churn Evitado"
+    }
+  },
+  "acceptable_accuracy_tradeoffs": {
+    "falsos_negativos": "Alto risco: clientes em churn não identificados pelo modelo, resultando em perda direta de receita futura.",
+    "falsos_positivos": "Risco médio: clientes sem churn sendo tratados como risco, gerando ações desnecessárias e aumento de custos.",
+    "decisao": "Priorizar alto recall para a classe de churn.",
+    "metricas_tecnicas": [
+      "AUC-ROC (separabilidade)",
+      "PR-AUC (desbalanceamento)",
+      "Recall (principal métrica de negócio)",
+      "F1-score (equilíbrio)"
+    ]
+  },
+  "data": {
+    "tipo": "Dados tabulares estruturados com variáveis demográficas, serviços contratados, comportamento e informações financeiras.",
+    "tamanho": "Dataset com ≥ 5.000 registros e ≥ 10 variáveis (escalável para milhões em produção).",
+    "velocidade": "Inferência near real-time via API, integrada a sistemas de CRM."
+  },
+  "infrastructure": {
+    "desenvolvimento": "Ambiente versionado com gerenciamento de dependências, experimentação e testes automatizados.",
+    "rastreamento": "Uso de MLflow para tracking de experimentos, métricas e artefatos.",
+    "producao": "Pipeline containerizado com Docker, modelo exposto via API REST para inferência."
+  },
+  "goal": {
+    "objetivo_ciencia_dados": "Desenvolver modelo de classificação que estime a probabilidade de churn com alto recall.",
+    "objetivo_tecnico": "Pipeline end-to-end com reprodutibilidade, versionamento e deploy em produção.",
+    "objetivo_negocio": [
+      "Reduzir churn em 10% no próximo semestre",
+      "Gerar aumento incremental de receita (~US$ 14.000/mês)"
+    ],
+    "objetivo_cd_avancado": "Incorporar cost-sensitive learning para balancear impacto de falsos positivos vs falsos negativos."
+  },
+  "model_type": {
+    "principal": "Rede Neural Multicamadas (MLP) com PyTorch",
+    "baselines": [
+      "DummyClassifier",
+      "Regressão Logística"
+    ]
+  },
+  "intervention": {
+    "acao": "Predições alimentam CRM para acionar estratégias de retenção em clientes de alto risco.",
+    "estrategias": [
+      "Ofertas personalizadas",
+      "Contato ativo",
+      "Atendimento prioritário"
+    ],
+    "criterio_ativacao": "Threshold de risco (ex: churn > 0.7)"
+  },
+  "upstream": {
+    "fonte": "Dataset Telco Customer Churn (IBM)",
+    "processamento": [
+      "Limpeza de dados",
+      "Feature engineering",
+      "Codificação de variáveis categóricas",
+      "Normalização",
+      "Pipeline com Scikit-learn"
+    ]
+  },
+  "downstream": {
+    "entrega": "Modelo disponibilizado via API REST (FastAPI) retornando probabilidade de churn e classificação.",
+    "monitoramento": {
+      "descricao": "Monitoramento contínuo com métricas e alertas",
+      "objetivo": "Detectar degradação e acionar re-treinamento",
+      "escopo": [
+        "Performance (AUC, Recall)",
+        "Data drift",
+        "Concept drift"
+      ]
+    },
+    "retraining": "Re-treinamento periódico (ex: mensal) ou baseado em degradação de performance"
+  },
+  "team": [
+    "João — Data Scientist",
+    "Jayne — Data Scientist",
+    "Bianca Emi — Data Engineer"
+  ],
+  "premissas": [
+    "Comportamento passado é preditivo de churn futuro",
+    "Dados disponíveis representam adequadamente os clientes",
+    "Ações de retenção impactam a decisão do cliente"
+  ],
+  "perguntas_negocio": [
+    "Qual o churn atual?",
+    "Quanto custa perder um cliente?",
+    "Quantos clientes podemos abordar por mês?",
+    "Qual o tempo de antecedência ideal?"
+  ]
+}

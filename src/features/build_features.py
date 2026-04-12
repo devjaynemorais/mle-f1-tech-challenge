@@ -13,12 +13,13 @@ def execute_features():
     print("Lendo a base interim...")
     df = pd.read_csv(config["data"]["interim_path"])
 
-    # Mapeando target binário
     target = config["features"]["target_column"]
-    df[target] = df[target].map({"Yes": 1, "No": 0})
-
+    drop_cols = config["features"]["drop_columns"]
     cat_cols = config["features"]["categorical_columns"]
     num_cols = config["features"]["numerical_columns"]
+
+    print(f"Removendo colunas desnecessárias: {drop_cols}")
+    df.drop(columns=[c for c in drop_cols if c in df.columns], inplace=True)
 
     print("Aplicando One-Hot Encoding nas categóricas...")
     df = pd.get_dummies(df, columns=cat_cols, drop_first=True)
@@ -37,14 +38,15 @@ def execute_features():
     )
 
     print("Escalonando variáveis numéricas...")
+    num_cols_encoded = [c for c in num_cols if c in X_train.columns]
     scaler = StandardScaler()
-    X_train[num_cols] = scaler.fit_transform(X_train[num_cols])
-    X_test[num_cols] = scaler.transform(X_test[num_cols])
+    X_train[num_cols_encoded] = scaler.fit_transform(X_train[num_cols_encoded])
+    X_test[num_cols_encoded] = scaler.transform(X_test[num_cols_encoded])
 
     print("Salvando Scaler (artefato)...")
     joblib.dump(scaler, config["model"]["scaler_path"])
 
-    print("Salvando bases processadas prontas para a Rede Neural...")
+    print("Salvando bases processadas prontas para modelagem...")
     train_df = pd.concat([X_train, y_train], axis=1)
     test_df = pd.concat([X_test, y_test], axis=1)
     train_df.to_csv(config["data"]["train_path"], index=False)

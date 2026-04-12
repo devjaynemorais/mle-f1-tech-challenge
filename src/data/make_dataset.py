@@ -1,30 +1,81 @@
 """Script to read raw data, clean it, and save as interim."""
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
 
 
-def main():
-    with open("config/config.yaml", "r") as f:
+def process_data():
+    # load config.yaml
+    BASE_DIR = Path(__file__).resolve().parents[2]
+    config_path = BASE_DIR / "config" / "config.yaml"
+
+
+    with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    print(f"Lendo base raw de: {config['data']['raw_path']}")
-    df = pd.read_csv(config["data"]["raw_path"])
+    raw_path = BASE_DIR / config["data"]["raw_path"]
+    interim_path = BASE_DIR / config["data"]["interim_path"]
 
-    # Limpeza
-    print("Convertendo TotalCharges para numérico (preenchendo vazios com NaN)...")
-    df["TotalCharges"] = pd.to_numeric(df["TotalCharges"].replace(" ", np.nan))
+    # load raw data
+    print(f"Lendo base raw de: {raw_path}")
+    df = pd.read_excel(raw_path)
 
-    print("Removendo nulos (11 linhas) e a coluna customerID...")
-    df = df.dropna(subset=["TotalCharges"])
-    if "customerID" in df.columns:
-        df = df.drop(columns=["customerID"])
+    # cleaning data
+    print("Iniciando limpeza dos dados...")
+    print("Verificando dados duplicados...")
+    if df.duplicated().sum() > 0:
+        print("removendo dados duplicados...")
+        df = df.drop_duplicates()
+    else:
+        print("Nenhum dado duplicado encontrado.")
 
-    interim_path = config["data"]["interim_path"]
+    # sessão para dados faltantes (ver depois)
+    print("Verificando dados faltantes...")
+    if df.isnull().sum().sum() > 0:
+        print(f"{df.isnull().sum().sum()} dados faltantes encontrados.")
+    else:
+        print("Nenhum dado faltante encontrado.")
+
+    print("Convertendo Total Charges para numérico (preenchendo vazios com 0)...")
+    df["Total Charges"] = pd.to_numeric(df["Total Charges"].replace(" ", np.nan))
+    df['Total Charges'] = df['Total Charges'].fillna(0)
+
+
+    print("Removendo Colunas desnecessárias...")
+    drop_cols = [
+        'Country',
+        'State',
+        'Lat Long',
+        'Churn Label',
+        'Churn Reason',
+        'Latitude',
+        'Longitude',
+        'Zip Code',
+        'Count'
+    ]
+
+    df.drop(columns=drop_cols, inplace=True)
+
+    print("Verificando se há valores nulos...")
+    if df.isnull().sum().sum() > 0:
+        print(f"{df.isnull().sum().sum()} valores nulos encontrados.")
+    else:
+        print("Nenhum valor nulo encontrado.")
+    
+    # checando informações gerais
+    print("===== INFORMAÇÕES GERAIS =====\n")
+    print(f"Total de linhas: {df.shape[0]}")
+    print(f"Total de colunas: {df.shape[1]}")
+    print("===== TIPOS DE DADOS =====\n")
+    print(df.info())
+
+    # salvando dados limpos em interim
     print(f"Salvando dados limpos em {interim_path}...")
     df.to_csv(interim_path, index=False)
     print("make_dataset.py concluído!")
 
+    return df
 
 if __name__ == "__main__":
-    main()
+    process_data()

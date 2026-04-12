@@ -1,0 +1,96 @@
+experiment:
+  name: churn_baseline
+  random_state: 42
+  test_size: 0.3
+
+data:
+  target: Churn Value
+
+  raw_path: data/raw/Telco_customer_churn.xlsx
+  interim_path: data/interim/telecom_clean.csv
+
+features:
+
+  # =====================
+  # REMOÇÃO (baseline)
+  # =====================
+
+  drop_churn_score:
+    enabled: true
+
+  drop_city:
+    enabled: true
+
+
+  # =====================
+  # FEATURES (todas OFF no baseline)
+  # =====================
+  valuable_high_risk:
+    enabled: false
+    cltv_col: CLTV
+    churn_score_col: Churn Score
+    cltv_threshold: 5000
+    churn_score_threshold: 75
+
+  engagement_score:
+    enabled: false
+    services:
+      - Online Security
+      - Tech Support
+      - Online Backup
+      - Device Protection
+
+  tenure_group:
+    enabled: false
+    tenure_col: tenure
+    bins: [0, 6, 12, 100]
+    labels: ["new", "mid", "loyal"]
+
+  tenure_log:
+    enabled: false
+    column: Tenure Months
+
+  contract_ordinal:
+    enabled: false
+    contract_col: Contract
+    mapping:
+      Month-to-month: 2
+      One year: 1
+      Two year: 0
+
+  family_stability:
+    enabled: false
+    partner_col: Partner
+    dependents_col: Dependents
+
+  fiber_no_support:
+    enabled: false
+    internet_col: Internet Service
+    support_col: Tech Support
+
+  city_freq_encoding:
+    enabled: false
+    city_col: City
+
+  city_region_mapping:
+    enabled: false
+
+
+model:
+  name: logistic_regression
+
+  params:
+    C: 1.0
+    max_iter: 1000
+    class_weight: balanced
+
+
+validation:
+  method: stratified_kfold
+  n_splits: 5
+  shuffle: true
+
+
+mlflow:
+  experiment_name: churn_exp
+  tracking_uri: http://localhost:5000
