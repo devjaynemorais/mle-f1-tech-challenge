@@ -12,6 +12,11 @@ do Recall — crucial para churn prediction.
 O MLflow registra métricas, parâmetros e o modelo final de cada experimento,
 facilitando a comparação entre diferentes configurações.
 """
+# ruff: noqa: E402
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import mlflow
 import mlflow.sklearn
@@ -22,7 +27,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from features.encoders import FrequencyEncoder
+from src.features.encoders import FrequencyEncoder
 
 
 def build_pipeline(config, X):
