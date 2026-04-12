@@ -109,9 +109,12 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
 
   Acesse [http://localhost:5000](http://localhost:5000) no navegador para ver métricas, parâmetros e artefatos.
 
-  > Para registrar experimentos ao executar os notebooks, suba o servidor antes de abrir o Jupyter:
+  > **Obrigatório para rodar os notebooks** (`02_baselines`, `03_experimentação`, `04_modelo_mvp`): os notebooks usam `mlflow.set_tracking_uri("http://localhost:5000")` e falharão com `ConnectionRefusedError` se o servidor não estiver ativo. Suba o servidor antes de abrir o Jupyter:
   > ```bash
-  > mlflow server --host 127.0.0.1 --port 5000 &
+  > mlflow server --host 127.0.0.1 --port 5000
+  > ```
+  > Em outro terminal:
+  > ```bash
   > jupyter notebook
   > ```
 
