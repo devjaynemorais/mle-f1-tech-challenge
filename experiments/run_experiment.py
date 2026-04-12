@@ -196,6 +196,10 @@ def _print_results(run_name: str, metrics: dict) -> None:
 
 
 if __name__ == "__main__":
+    # --config é obrigatório: cada experimento é descrito por um YAML em config/.
+    # Exemplo: python experiments/run_experiment.py --config config/base_exp.yaml
+    # Para novo experimento: copie base_exp.yaml, ajuste os parâmetros e passe o novo
+    # arquivo via --config.
     parser = argparse.ArgumentParser(
         description="Experimenta combinações de features com LogisticRegression"
     )
