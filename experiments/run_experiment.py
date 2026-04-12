@@ -1,18 +1,13 @@
 """
-Orquestra experimentos de ML com validação cruzada e tracking no MLflow.
+Script de experimentação: testa combinações de features com LogisticRegression,
+avalia com validação cruzada estratificada e loga métricas técnicas e KPIs de
+negócio (CLTV) no MLflow.
 
-As transformações de engenharia de features são aplicadas de forma condicional,
-permitindo ativar/desativar cada uma via arquivo de configuração YAML.
-
-O pipeline é construído dinamicamente, garantindo flexibilidade e modularidade.
-
-As métricas avaliadas incluem ROC AUC, F1 e Recall, com foco na estabilidade
-do Recall — crucial para churn prediction.
-
-O MLflow registra métricas, parâmetros e o modelo final de cada experimento,
-facilitando a comparação entre diferentes configurações.
+Uso:
+    python experiments/run_experiment.py --config config/base_exp.yaml
 """
 # ruff: noqa: E402
+import argparse
 import sys
 from pathlib import Path
 
@@ -21,8 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import mlflow
 import mlflow.sklearn
 import numpy as np
+import pandas as pd
+import yaml
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, recall_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -30,31 +28,35 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.features.encoders import FrequencyEncoder
 
 
-def build_pipeline(config, X):
-    """
-    Summary:
-        Constrói o pipeline de experimentação com base nas transformações
-        de engenharia de features.
+def load_data(config: dict) -> tuple:
+    """Carrega dados do interim, separa features, target e metadados de negócio."""
+    df = pd.read_csv(config["data"]["interim_path"])
+    target = config["data"]["target"]
 
-    Args:
-        config (yaml): Configuração yaml com transformações e parâmetros do modelo.
-        X (DataFrame): DataFrame de entrada para identificar colunas numéricas
-            e categóricas.
+    drop_cols = []
+    if config["features"].get("drop_churn_score", {}).get("enabled", False):
+        drop_cols.append("Churn Score")
+    if config["features"].get("drop_city", {}).get("enabled", False):
+        drop_cols.append("City")
 
-    Returns:
-        Pipeline: Pipeline do sklearn com pré-processamento e modelo final.
-    """
+    meta = df[["CLTV", "CustomerID"]].copy()
+    X = df.drop(
+        columns=[target, "CLTV", "CustomerID"]
+        + [c for c in drop_cols if c in df.columns]
+    )
+    y = df[target]
 
-    steps = []
-    model = LogisticRegression(**config["model"]["params"])
+    return X, y, meta
 
+
+def build_pipeline(config: dict, X: pd.DataFrame) -> Pipeline:
+    """Constrói o pipeline de pré-processamento + LogisticRegression."""
     numerical_cols = X.select_dtypes(exclude=["object", "category"]).columns.tolist()
     categorical_cols = X.select_dtypes(include=["object", "category"]).columns.tolist()
 
-    if (
-        config["features"]["city_freq_encoding"]["enabled"]
-        and "City" in categorical_cols
-    ):
+    city_enc_cfg = config["features"].get("city_freq_encoding", {})
+    use_city_freq = city_enc_cfg.get("enabled", False) and "City" in categorical_cols
+    if use_city_freq:
         categorical_cols.remove("City")
 
     preprocessor = ColumnTransformer(
@@ -64,152 +66,143 @@ def build_pipeline(config, X):
         ]
     )
 
-    steps.append(("preprocessor", preprocessor))
-
-    if config["features"]["city_freq_encoding"]["enabled"]:
+    steps = [("preprocessor", preprocessor)]
+    if use_city_freq:
         steps.append(("city_freq_encoding", FrequencyEncoder(column="City")))
-
     steps.append(("scaler", StandardScaler()))
-    steps.append(("model", model))
+    steps.append(("model", LogisticRegression(**config["model"]["params"])))
 
-    pipeline = Pipeline(steps)
-
-    return pipeline
+    return Pipeline(steps)
 
 
-def run_cv(model, X, y, meta, config):
+def run_cv(
+    pipeline: Pipeline, X: pd.DataFrame, y: pd.Series, meta: pd.DataFrame, config: dict
+) -> dict:
     """
-    Summary:
-        Roda uma Validação Cruzada e retorna as métricas de desempenho.
+    Roda validação cruzada estratificada com CLTV como sample_weight.
 
-    Args:
-        model (Pipeline): Pipeline com pré-processamento e modelo final.
-        X (DataFrame): DataFrame de entrada para a validação cruzada.
-        y (Series): Séries de alvo para a validação cruzada.
-        meta (DataFrame): DataFrame de metadados para a validação cruzada.
-        config (yaml): Configuração yaml com parâmetros da validação cruzada.
-
-    Returns:
-        dict: Dicionário com as métricas de desempenho da validação cruzada.
+    Retorna métricas técnicas e KPIs de negócio por fold.
     """
-
     cv_config = config["validation"]
-
     cv = StratifiedKFold(
         n_splits=cv_config["n_splits"],
         shuffle=cv_config["shuffle"],
         random_state=config["experiment"]["random_state"],
     )
 
-    roc_auc_scores = []
-    f1_scores = []
-    recall_scores = []
-    expected_losses = []
-    cltv_means = []
-    captured_values = []
-    capture_value_ratios = []
+    scores = {
+        k: []
+        for k in [
+            "roc_auc",
+            "f1",
+            "recall",
+            "captured_value",
+            "expected_loss",
+            "cltv_mean",
+            "capture_value_ratio",
+        ]
+    }
 
     for train_idx, val_idx in cv.split(X, y):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-        meta_train, meta_val = meta.iloc[train_idx], meta.iloc[val_idx]
+        meta_val = meta.iloc[val_idx]
 
-        # CLTV como peso: clientes de maior valor têm mais influência no treino
-        sample_weight = meta_train["CLTV"].values
+        cltv_weights = meta.iloc[train_idx]["CLTV"].values
+        pipeline.fit(X_train, y_train, model__sample_weight=cltv_weights)
 
-        model.fit(X_train, y_train, sample_weight=sample_weight)
+        y_pred = pipeline.predict(X_val)
+        y_proba = pipeline.predict_proba(X_val)[:, 1]
 
-        y_pred = model.predict(X_val)
-        y_proba = model.predict_proba(X_val)[:, 1]
+        scores["roc_auc"].append(roc_auc_score(y_val, y_proba))
+        scores["f1"].append(f1_score(y_val, y_pred))
+        scores["recall"].append(recall_score(y_val, y_pred))
 
-        # KPI tradicionais
-        from sklearn.metrics import f1_score, recall_score, roc_auc_score
+        captured = meta_val.loc[(y_val == 1) & (y_pred == 1), "CLTV"].sum()
+        lost = meta_val.loc[(y_val == 1) & (y_pred == 0), "CLTV"].sum()
+        cltv_tp_mean = meta_val.loc[(y_val == 1) & (y_pred == 1), "CLTV"].mean()
 
-        roc_auc_scores.append(roc_auc_score(y_val, y_proba))
-        f1_scores.append(f1_score(y_val, y_pred))
-        recall_scores.append(recall_score(y_val, y_pred))
-
-        # KPI de negócio -> abstrair depois em business_metrics.py
-        captured_value = meta_val.loc[(y_val == 1) & (y_pred == 1), "CLTV"].sum()
-        captured_values.append(captured_value)
-
-        cltv_mean = meta_val.loc[(y_val == 1) & (y_pred == 1), "CLTV"].mean()
-        cltv_means.append(cltv_mean)
-
-        expected_loss = meta_val.loc[(y_val == 1) & (y_pred == 0), "CLTV"].sum()
-        expected_losses.append(expected_loss)
-
-        capture_value_ratio = (
-            captured_value / (captured_value + expected_loss)
-            if (captured_value + expected_loss) > 0
-            else 0
+        scores["captured_value"].append(captured)
+        scores["expected_loss"].append(lost)
+        scores["cltv_mean"].append(0.0 if np.isnan(cltv_tp_mean) else cltv_tp_mean)
+        scores["capture_value_ratio"].append(
+            captured / (captured + lost) if (captured + lost) > 0 else 0.0
         )
-        capture_value_ratios.append(capture_value_ratio)
 
-    return {
-        "roc_auc": roc_auc_scores,
-        "f1": f1_scores,
-        "recall": recall_scores,
-        "cltv_mean": cltv_means,
-        "expected_loss": expected_losses,
-        "captured_value": captured_values,
-        "capture_value_ratio": capture_value_ratios,
-    }
+    return {k: np.array(v) for k, v in scores.items()}
 
 
-def run_experiment(df, config):
-    """
-    Orquestra o experimento e realiza o tracking no MLflow.
+def run_experiment(config_path: str) -> dict:
+    """Orquestra o experimento: carrega dados, roda CV, loga no MLflow."""
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
 
-    Loga métricas, parâmetros e o modelo final para comparação entre
-    diferentes configurações de experimentos.
+    mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
+    mlflow.set_experiment(config["mlflow"]["experiment_name"])
 
-    Args:
-        df (DataFrame): DataFrame de entrada para o experimento.
-        config (yaml): Configuração yaml com transformações de features
-            e parâmetros do modelo.
-
-    Returns:
-        dict: Dicionário com as métricas de desempenho do experimento.
-    """
-
-    target = config["data"]["target"]
-
-    X = df.drop(columns=[target, "CLTV", "CustomerID"])
-    y = df[target]
-    meta = df[["CLTV", "CustomerID"]]
-
+    X, y, meta = load_data(config)
     pipeline = build_pipeline(config, X)
-
     scores = run_cv(pipeline, X, y, meta, config)
 
     metrics = {
-        "roc_auc_mean": np.mean(scores["roc_auc"]),
-        "f1_mean": np.mean(scores["f1"]),
         "recall_mean": np.mean(scores["recall"]),
         "recall_std": np.std(scores["recall"]),
-        "cltv_mean": np.mean(scores["cltv_mean"]),
-        "expected_loss_mean": np.mean(scores["expected_loss"]),
+        "f1_mean": np.mean(scores["f1"]),
+        "roc_auc_mean": np.mean(scores["roc_auc"]),
         "captured_value_mean": np.mean(scores["captured_value"]),
+        "expected_loss_mean": np.mean(scores["expected_loss"]),
         "capture_value_ratio_mean": np.mean(scores["capture_value_ratio"]),
+        "cltv_captured_mean": np.mean(scores["cltv_mean"]),
     }
 
-    mlflow.log_params(config["model"]["params"])
-    mlflow.log_metrics(metrics)
-    mlflow.log_dict(config, "config.yaml")
+    run_name = config["experiment"]["name"]
 
-    for feat_name, feat_cfg in config["features"].items():
-        if isinstance(feat_cfg, dict) and "enabled" in feat_cfg:
-            mlflow.log_params({f"feature__{feat_name}": feat_cfg["enabled"]})
+    with mlflow.start_run(run_name=run_name):
+        mlflow.log_params(config["model"]["params"])
+        mlflow.log_param("cv_folds", config["validation"]["n_splits"])
+        mlflow.log_param("n_samples", len(X))
+        mlflow.log_param("n_features", X.shape[1])
 
-    # O CV treina em folds parciais, deixando o pipeline no estado do último fold.
-    # Por isso, criamos um novo pipeline e retreinamos no dataset completo,
-    # garantindo que o modelo registrado no MLflow foi ajustado em todos os dados.
-    final_pipeline = build_pipeline(config, X)
-    # Usa CLTV como sample_weight — model__sample_weight atravessa o Pipeline
-    # do sklearn até o LogisticRegression.
-    sample_weight_full = meta["CLTV"].values
-    final_pipeline.fit(X, y, model__sample_weight=sample_weight_full)
-    mlflow.sklearn.log_model(final_pipeline, artifact_path="model")
+        for feat_name, feat_cfg in config["features"].items():
+            if isinstance(feat_cfg, dict) and "enabled" in feat_cfg:
+                mlflow.log_param(f"feature__{feat_name}", feat_cfg["enabled"])
 
+        mlflow.log_metrics(metrics)
+        mlflow.log_dict(config, "config.yaml")
+
+        final_pipeline = build_pipeline(config, X)
+        final_pipeline.fit(X, y, model__sample_weight=meta["CLTV"].values)
+        mlflow.sklearn.log_model(final_pipeline, "model")
+
+    _print_results(run_name, metrics)
     return metrics
+
+
+def _print_results(run_name: str, metrics: dict) -> None:
+    print(f"\n{'='*50}")
+    print(f"Experimento: {run_name}")
+    print(f"{'='*50}")
+
+    print("\n--- Métricas Técnicas (CV) ---")
+    print(f"  Recall  {metrics['recall_mean']:.4f}  ± {metrics['recall_std']:.4f}")
+    print(f"  F1      {metrics['f1_mean']:.4f}")
+    print(f"  AUC     {metrics['roc_auc_mean']:.4f}")
+
+    print("\n--- KPIs de Negócio (CV médio) ---")
+    print(f"  CLTV Capturado       R$ {metrics['captured_value_mean']:>10,.0f}")
+    print(f"  Perda Esperada       R$ {metrics['expected_loss_mean']:>10,.0f}")
+    print(f"  Capture Ratio        {metrics['capture_value_ratio_mean']:>10.2%}")
+    print(f"  CLTV Médio Capturado R$ {metrics['cltv_captured_mean']:>10,.0f}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Experimenta combinações de features com LogisticRegression"
+    )
+    parser.add_argument(
+        "--config",
+        required=True,
+        help="Caminho para o config YAML do experimento (ex: config/base_exp.yaml)",
+    )
+    args = parser.parse_args()
+    run_experiment(args.config)
