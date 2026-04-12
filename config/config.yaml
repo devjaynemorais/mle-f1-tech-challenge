@@ -128,5 +128,5 @@ validation:
 
 
 mlflow:
-  experiment_name: churn_exp
+  experiment_name: Churn_Prediction_Pipeline
   tracking_uri: http://localhost:5000
