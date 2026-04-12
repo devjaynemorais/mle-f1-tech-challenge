@@ -1,10 +1,13 @@
+import os
 import subprocess
 import sys
+
+ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 
 def run_step(script_path):
     print(f"\n{'='*40}\nExecutando: {script_path}\n{'='*40}")
-    result = subprocess.run([sys.executable, script_path])
+    result = subprocess.run([sys.executable, script_path], env=ENV)
     if result.returncode != 0:
         print(f"Erro fatal executando {script_path}. Abortando pipeline.")
         sys.exit(1)
