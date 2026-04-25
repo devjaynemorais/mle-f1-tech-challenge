@@ -213,10 +213,10 @@ Para trocar o modelo de produção, altere `model.name` e `model_path` em `confi
 
 ```bash
 make api
-# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
+Acesse a documentação interativa em [http://localhost:8080/docs](http://localhost:8080/docs).
 
 ### Endpoints
 
@@ -228,7 +228,7 @@ Acesse a documentação interativa em [http://localhost:8000/docs](http://localh
 ### Exemplo de requisição
 
 ```bash
-curl -X POST http://localhost:8000/predict \
+curl -X POST http://localhost:8080/predict \
   -H "Content-Type: application/json" \
   -d '{
     "records": [{
@@ -275,14 +275,14 @@ curl -X POST http://localhost:8000/predict \
 
 ```bash
 make docker-build   # constrói a imagem churn-api:latest
-make docker-run     # sobe o container na porta 8000
+make docker-run     # sobe o container na porta 8080
 ```
 
 Ou manualmente:
 
 ```bash
 docker build -t churn-api:latest .
-docker run -p 8000:8000 churn-api:latest
+docker run -p 8080:8080 churn-api:latest
 ```
 
 ---
@@ -296,9 +296,9 @@ make lint          # ruff check .
 make test          # pytest tests/ -v
 make train         # python run_train.py
 make inference     # python run_inference.py
-make api           # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+make api           # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8080
 make docker-build  # docker build -t churn-api:latest .
-make docker-run    # docker run -p 8000:8000 churn-api:latest
+make docker-run    # docker run -p 8080:8080 churn-api:latest
 ```
 
 ---
