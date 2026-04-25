@@ -8,7 +8,7 @@ Este diretório concentra todo o código de experimentação do projeto de predi
 
 ```
 experiments/
-├── run_experiment.py        # CLI principal para rodar experimentos rastreados no MLflow
+├── run_train.py             # CLI principal para rodar experimentos rastreados no MLflow
 ├── notebooks/
 │   ├── 01_exploratory_data_analysis.ipynb
 │   ├── 02_baselines.ipynb
@@ -32,11 +32,11 @@ config/
 
 ## Como rodar um experimento
 
-O script `run_experiment.py` é um CLI standalone. O argumento `--config` é **obrigatório** — cada experimento é descrito por um arquivo YAML.
+O script `run_train.py` é um CLI standalone. O argumento `--config` é **obrigatório** — cada experimento é descrito por um arquivo YAML.
 
 ```bash
 # A partir da raiz do projeto
-python experiments/run_experiment.py --config config/base_exp.yaml
+python experiments/run_train.py --config config/base_exp.yaml
 ```
 
 > O MLflow Tracking Server precisa estar rodando antes de executar.
@@ -58,7 +58,7 @@ python experiments/run_experiment.py --config config/base_exp.yaml
 2. Edite `meu_experimento.yaml`: altere `experiment.name`, ative/desative features em `features:` e ajuste hiperparâmetros em `model.params`.
 3. Rode:
    ```bash
-   python experiments/run_experiment.py --config config/meu_experimento.yaml
+   python experiments/run_train.py --config config/meu_experimento.yaml
    ```
 4. Compare os resultados na UI do MLflow (`http://localhost:5000`).
 

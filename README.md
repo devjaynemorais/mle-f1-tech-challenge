@@ -87,7 +87,7 @@ Com o ambiente ativado e dependências resolvidas, você já pode operar todas a
 
 - **Executar o Pipeline Completo** (pré-processamento → features → treino → predição):
   ```bash
-  python run_pipeline.py
+  python run_inference.py
   ```
   O pipeline executa automaticamente na seguinte ordem, usando `config/config.yaml`:
   1. `src/data/make_dataset.py` — carrega e limpa os dados brutos
@@ -124,7 +124,7 @@ Os experimentos são controlados por arquivos YAML em `config/`. Cada arquivo de
 
 | Arquivo | Descrição |
 |---|---|
-| `config.yaml` | Configuração principal usada pelo `run_pipeline.py` |
+| `config.yaml` | Configuração principal usada pelo `run_inference.py` |
 | `base_exp.yaml` | Template de baseline — todas as features desativadas |
 | `mvp.yaml` | Configuração do modelo MVP |
 
@@ -144,13 +144,13 @@ features:
 
 ### Rodando um experimento com validação cruzada
 
-O módulo `src/models/run_experiment.py` orquestra a experimentação: aplica as features configuradas, executa validação cruzada estratificada e loga métricas e parâmetros no MLflow.
+O módulo `experiments/run_train.py` orquestra a experimentação: aplica as features configuradas, executa validação cruzada estratificada e loga métricas e parâmetros no MLflow.
 
 Para usar, carregue um YAML e chame `run_experiment()` — como feito nos notebooks `03` e `04`:
 
 ```python
 import yaml
-from src.models.run_experiment import run_experiment
+from experiments.run_train import run_experiment
 
 with open("config/base_exp.yaml") as f:
     config = yaml.safe_load(f)
