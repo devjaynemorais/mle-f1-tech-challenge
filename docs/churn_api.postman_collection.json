@@ -1,0 +1,225 @@
+{
+  "info": {
+    "name": "Churn Prediction API",
+    "description": "API de inferência batch para predição de churn — Telco Customer Churn Tech Challenge Fase 1.\n\nEndpoints disponíveis:\n- GET  /health  — verifica se a API e o modelo estão disponíveis\n- POST /predict — predição batch: recebe lista de clientes, retorna probabilidade e label de churn\n\nConfigure a variável `base_url` para apontar para o ambiente desejado.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8080",
+      "type": "string",
+      "description": "URL base da API. Troque para http://localhost:8080 (local) ou a URL do deploy em nuvem."
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        },
+        "description": "Verifica se a API está disponível e qual modelo está carregado."
+      },
+      "response": [
+        {
+          "name": "200 OK — API saudável",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "body": "{\n  \"status\": \"ok\",\n  \"model\": \"mlp\",\n  \"model_path\": \"models/mlp_baseline.pt\"\n}",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Predict — 1 cliente (churn provável)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 2,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"Yes\",\n      \"Streaming Movies\": \"Yes\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Electronic check\",\n      \"Monthly Charges\": 85.0,\n      \"Total Charges\": 170.0,\n      \"CLTV\": 2500\n    }\n  ]\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/predict",
+          "host": ["{{base_url}}"],
+          "path": ["predict"]
+        },
+        "description": "Cliente com contrato mensal, fibra óptica e poucos meses de tenure — perfil de alto risco de churn."
+      },
+      "response": [
+        {
+          "name": "200 OK — churn previsto",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-Latency-Ms", "value": "12.3" }
+          ],
+          "body": "{\n  \"model\": \"mlp\",\n  \"n_records\": 1,\n  \"predictions\": [\n    {\n      \"churn_probability\": 0.83,\n      \"churn_label\": 1\n    }\n  ]\n}",
+          "originalRequest": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 2,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"Yes\",\n      \"Streaming Movies\": \"Yes\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Electronic check\",\n      \"Monthly Charges\": 85.0,\n      \"Total Charges\": 170.0,\n      \"CLTV\": 2500\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/predict",
+              "host": ["{{base_url}}"],
+              "path": ["predict"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Predict — 1 cliente (baixo risco)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Female\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"Yes\",\n      \"Tenure Months\": 60,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"Yes\",\n      \"Internet Service\": \"DSL\",\n      \"Online Security\": \"Yes\",\n      \"Online Backup\": \"Yes\",\n      \"Device Protection\": \"Yes\",\n      \"Tech Support\": \"Yes\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"Two year\",\n      \"Paperless Billing\": \"No\",\n      \"Payment Method\": \"Bank transfer (automatic)\",\n      \"Monthly Charges\": 65.0,\n      \"Total Charges\": 3900.0,\n      \"CLTV\": 5800\n    }\n  ]\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/predict",
+          "host": ["{{base_url}}"],
+          "path": ["predict"]
+        },
+        "description": "Cliente fiel: contrato de 2 anos, muitos serviços contratados, alto tenure — baixo risco de churn."
+      },
+      "response": [
+        {
+          "name": "200 OK — sem churn previsto",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-Latency-Ms", "value": "10.1" }
+          ],
+          "body": "{\n  \"model\": \"mlp\",\n  \"n_records\": 1,\n  \"predictions\": [\n    {\n      \"churn_probability\": 0.12,\n      \"churn_label\": 0\n    }\n  ]\n}",
+          "originalRequest": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Female\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"Yes\",\n      \"Tenure Months\": 60,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"Yes\",\n      \"Internet Service\": \"DSL\",\n      \"Online Security\": \"Yes\",\n      \"Online Backup\": \"Yes\",\n      \"Device Protection\": \"Yes\",\n      \"Tech Support\": \"Yes\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"Two year\",\n      \"Paperless Billing\": \"No\",\n      \"Payment Method\": \"Bank transfer (automatic)\",\n      \"Monthly Charges\": 65.0,\n      \"Total Charges\": 3900.0,\n      \"CLTV\": 5800\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/predict",
+              "host": ["{{base_url}}"],
+              "path": ["predict"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Predict — batch (múltiplos clientes)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"No\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 1,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Electronic check\",\n      \"Monthly Charges\": 70.0,\n      \"Total Charges\": 70.0,\n      \"CLTV\": 2000\n    },\n    {\n      \"gender\": \"Female\",\n      \"Senior Citizen\": \"Yes\",\n      \"partner\": \"No\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 12,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"Yes\",\n      \"Streaming Movies\": \"Yes\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Mailed check\",\n      \"Monthly Charges\": 95.0,\n      \"Total Charges\": 1140.0,\n      \"CLTV\": 3200\n    },\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"Yes\",\n      \"Tenure Months\": 48,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"Yes\",\n      \"Internet Service\": \"DSL\",\n      \"Online Security\": \"Yes\",\n      \"Online Backup\": \"Yes\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"Yes\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"One year\",\n      \"Paperless Billing\": \"No\",\n      \"Payment Method\": \"Credit card (automatic)\",\n      \"Monthly Charges\": 55.0,\n      \"Total Charges\": 2640.0,\n      \"CLTV\": 4900\n    }\n  ]\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/predict",
+          "host": ["{{base_url}}"],
+          "path": ["predict"]
+        },
+        "description": "Exemplo com 3 clientes em um único request batch: novo (alto risco), senior (alto risco) e fiel (baixo risco)."
+      },
+      "response": [
+        {
+          "name": "200 OK — batch com 3 clientes",
+          "status": "OK",
+          "code": 200,
+          "header": [
+            { "key": "Content-Type", "value": "application/json" },
+            { "key": "X-Latency-Ms", "value": "15.4" }
+          ],
+          "body": "{\n  \"model\": \"mlp\",\n  \"n_records\": 3,\n  \"predictions\": [\n    { \"churn_probability\": 0.87, \"churn_label\": 1 },\n    { \"churn_probability\": 0.74, \"churn_label\": 1 },\n    { \"churn_probability\": 0.18, \"churn_label\": 0 }\n  ]\n}",
+          "originalRequest": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/predict",
+              "host": ["{{base_url}}"],
+              "path": ["predict"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Predict — body inválido (sem records)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"records\": []\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{base_url}}/predict",
+          "host": ["{{base_url}}"],
+          "path": ["predict"]
+        },
+        "description": "Teste de validação: lista vazia deve retornar 422 Unprocessable Entity."
+      },
+      "response": [
+        {
+          "name": "422 Unprocessable Entity — lista vazia",
+          "status": "Unprocessable Entity",
+          "code": 422,
+          "header": [
+            { "key": "Content-Type", "value": "application/json" }
+          ],
+          "body": "{\n  \"detail\": [\n    {\n      \"type\": \"too_short\",\n      \"loc\": [\"body\", \"records\"],\n      \"msg\": \"List should have at least 1 item after validation, not 0\",\n      \"input\": []\n    }\n  ]\n}",
+          "originalRequest": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"records\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/predict",
+              "host": ["{{base_url}}"],
+              "path": ["predict"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
