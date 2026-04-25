@@ -1,0 +1,42 @@
+services:
+
+  mlflow:
+    build: .
+    command: mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import socket; s=socket.socket(); s.connect(('localhost', 5000)); s.close()"
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  train:
+    build: .
+    command: train
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    depends_on:
+      mlflow:
+        condition: service_healthy
+
+  api:
+    build: .
+    command: api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+
+volumes:
+  mlflow_data:

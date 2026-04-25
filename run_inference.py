@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 
-_in_venv = sys.prefix != sys.base_prefix
+_in_venv = sys.prefix != sys.base_prefix or bool(os.environ.get("RUNNING_IN_DOCKER"))
 if not _in_venv:
     print(
         "ERRO: ambiente virtual não está ativo.\n"

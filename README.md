@@ -26,8 +26,10 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 │   ├── evaluation/   # Métricas técnicas (compute_metrics)
 │   └── utils/        # Logging, EDA, plots, estatísticas
 ├── tests/            # Testes automatizados com pytest
-├── Dockerfile        # Containerização da API
-├── Makefile          # Atalhos: lint, test, train, inference, api, docker
+├── Dockerfile        # Imagem Docker — treino, inferência e API via entrypoint.sh
+├── docker-compose.yml# Orquestra mlflow + train + api
+├── entrypoint.sh     # Roteador de modo: train | inference | api | mlflow
+├── Makefile          # Atalhos: lint, test, train, inference, api, docker, compose
 ├── run_train.py      # Pipeline de treino (dados → features → modelo)
 └── run_inference.py  # Pipeline de inferência (carrega modelo → prediz)
 ```
@@ -39,7 +41,7 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 ### Pré-requisitos
 
 - Python 3.9 ou superior
-- Docker (opcional, para containerizar a API)
+- Docker (opcional — cobre treino, inferência e API via containers, sem instalar Python localmente)
 
 ### Passo a Passo
 
@@ -99,7 +101,7 @@ jupyter notebook
 
 > Notebooks com MLflow requerem o servidor em terminal separado:
 > ```bash
-> mlflow server --host 127.0.0.1 --port 5000
+> make mlflow
 > ```
 
 ### Notebooks disponíveis
@@ -121,13 +123,16 @@ jupyter notebook
 > **Config:** `config/config.yaml` — `model.name` define qual modelo treinar.  
 > **Pré-requisito:** dados brutos em `data/raw/Telco_customer_churn.xlsx`.
 
-### Passo 1 — (Opcional) Suba o MLflow
+### Passo 1 — (Opcional) Visualize os runs no MLflow UI
+
+O treino escreve diretamente em `mlflow.db` (SQLite local) — nenhum servidor é necessário para rodar. Para visualizar os experimentos no browser:
 
 ```bash
-mlflow server --host 127.0.0.1 --port 5000
+make mlflow
+# equivalente a: mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db
 ```
 
-O pipeline roda sem o servidor; os runs ficam salvos localmente em `mlruns/`.
+Acesse [http://127.0.0.1:5000](http://127.0.0.1:5000). Pode ser aberto antes ou depois do treino.
 
 ### Passo 2 — Execute o treino
 
@@ -213,10 +218,10 @@ Para trocar o modelo de produção, altere `model.name` e `model_path` em `confi
 
 ```bash
 make api
-# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8080
+# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Acesse a documentação interativa em [http://localhost:8080/docs](http://localhost:8080/docs).
+Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
 
 ### Endpoints
 
@@ -228,7 +233,7 @@ Acesse a documentação interativa em [http://localhost:8080/docs](http://localh
 ### Exemplo de requisição
 
 ```bash
-curl -X POST http://localhost:8080/predict \
+curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
     "records": [{
@@ -273,47 +278,52 @@ curl -X POST http://localhost:8080/predict \
 
 ### Rodando com Docker
 
-> **Pré-requisito:** Docker instalado e rodando. Baixe em [docker.com/get-started](https://www.docker.com/get-started).
+> **Pré-requisito único:** [Docker Desktop](https://www.docker.com/get-started) instalado e rodando. Nenhum Python, venv ou dependência local necessária.
 
-**Passo 1 — Gere os artefatos do modelo** (se ainda não tiver):
+O `docker-compose.yml` orquestra três serviços com a mesma imagem:
+
+| Serviço | Papel | Porta |
+|---|---|---|
+| `mlflow` | Tracking server — registra experimentos e métricas | 5000 |
+| `train` | Pipeline de treino completo — executa e encerra | — |
+| `api` | FastAPI + uvicorn — serve predições batch | 8000 |
+
+**Passo 1 — Build (uma vez):**
 
 ```bash
-python run_train.py
+docker compose build
 ```
 
-O Docker copia a pasta `models/` para dentro da imagem. Sem os artefatos gerados, a API não terá modelo para carregar.
-
-**Passo 2 — Construa a imagem:**
+**Passo 2 — Treinar:**
 
 ```bash
-docker build -t churn-api:latest .
+docker compose up -d mlflow
+docker compose run --rm train
 ```
 
-**Passo 3 — Suba o container:**
+O `train` aguarda o MLflow estar saudável, executa `make_dataset → build_features → train_model` e encerra. Os artefatos (`.pt`, `.pkl`, `feature_columns.json`) são salvos em `./models/` no host via volume.
+
+**Passo 3 — Subir a API:**
 
 ```bash
-docker run -p 8080:8080 churn-api:latest
+docker compose up -d api
 ```
 
-A API ficará disponível em [http://localhost:8080/docs](http://localhost:8080/docs).
-
-**Testar os endpoints:**
+**Testar:**
 
 ```bash
-# Health check
-curl http://localhost:8080/health
-
-# Predição batch
-curl -X POST http://localhost:8080/predict \
-  -H "Content-Type: application/json" \
-  -d '{"records": [{"gender":"Male","Senior Citizen":"No","partner":"Yes","dependents":"No","Tenure Months":24,"Phone Service":"Yes","Multiple Lines":"No","Internet Service":"Fiber optic","Online Security":"No","Online Backup":"No","Device Protection":"No","Tech Support":"No","Streaming TV":"Yes","Streaming Movies":"Yes","contract":"Month-to-month","Paperless Billing":"Yes","Payment Method":"Electronic check","Monthly Charges":85.0,"Total Charges":2040.0,"CLTV":3500}]}'
+curl http://localhost:8000/health
 ```
 
-**Parar o container:**
+| Interface | URL |
+|---|---|
+| Swagger UI | http://localhost:8000/docs |
+| MLflow UI | http://127.0.0.1:5000 |
+
+**Parar tudo:**
 
 ```bash
-docker ps                        # lista containers ativos e anota o CONTAINER ID
-docker stop <CONTAINER ID>
+docker compose down
 ```
 
 ---
@@ -323,13 +333,21 @@ docker stop <CONTAINER ID>
 Atalhos para as operações mais comuns:
 
 ```bash
-make lint          # ruff check .
-make test          # pytest tests/ -v
-make train         # python run_train.py
-make inference     # python run_inference.py
-make api           # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8080
-make docker-build  # docker build -t churn-api:latest .
-make docker-run    # docker run -p 8080:8080 churn-api:latest
+# Qualidade e testes
+make lint           # ruff check .
+make test           # pytest tests/ -v
+
+# Fluxo local (requer .venv ativo)
+make train          # python run_train.py
+make inference      # python run_inference.py
+make api            # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+make mlflow         # mlflow server --host 127.0.0.1 --port 5000 --workers 1
+
+# Docker Compose (fluxo completo, sem Python local)
+make compose-build  # docker compose build
+make compose-train  # sobe mlflow + executa treino one-shot
+make compose-up     # sobe mlflow + api
+make compose-down   # docker compose down
 ```
 
 ---

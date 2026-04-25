@@ -10,12 +10,11 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import os
 import socket
 
 import joblib
 import mlflow
-import mlflow.pytorch
-import mlflow.sklearn
 import numpy as np
 import pandas as pd
 import torch
@@ -96,7 +95,6 @@ def train_dummy(X_train, y_train, X_test, y_test, config):
         mlflow.log_param("model", "DummyClassifier")
         mlflow.log_param("strategy", "most_frequent")
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
-        mlflow.sklearn.log_model(model, "dummy_classifier")
 
     joblib.dump(model, config["model"]["model_path"])
     logger.info(
@@ -148,7 +146,6 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
         mlflow.log_metric("cv_recall", np.mean(cv_results["test_recall"]))
         mlflow.log_metric("cv_auc", np.mean(cv_results["test_auc"]))
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
-        mlflow.sklearn.log_model(pipeline, "logistic_regression_pipeline")
 
     joblib.dump(pipeline, config["model"]["model_path"])
     cv_recall = np.mean(cv_results["test_recall"])
@@ -174,7 +171,6 @@ def train_random_forest(X_train, y_train, X_test, y_test, config):
     with mlflow.start_run(run_name="RandomForest"):
         mlflow.log_param("model", "RandomForest")
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
-        mlflow.sklearn.log_model(model, "rf_baseline")
 
     joblib.dump(model, config["model"]["model_path"])
     logger.info(
@@ -243,7 +239,6 @@ def train_mlp(X_train, y_train, X_test, y_test, config):
         mlflow.log_param("lr", MLP_LR)
         mlflow.log_param("weight_decay", MLP_WD)
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
-        mlflow.pytorch.log_model(model, "mlp_baseline")
 
     torch.save(model.state_dict(), config["model"]["model_path"])
     joblib.dump(scaler, config["model"]["mlp_scaler_path"])
@@ -270,7 +265,10 @@ def train():
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    _check_mlflow_server(config["mlflow"]["tracking_uri"])
+    tracking_uri = (
+        os.environ.get("MLFLOW_TRACKING_URI") or config["mlflow"]["tracking_uri"]
+    )
+    _check_mlflow_server(tracking_uri)
 
     model_name = config["model"]["name"]
     if model_name not in MODELS_TO_TRAIN:
@@ -287,7 +285,7 @@ def train():
     X_test = test_df.drop(columns=[target]).values
     y_test = test_df[target].values
 
-    mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
 
     logger.info("Treinando modelo de produção: %s", model_name)

@@ -130,4 +130,4 @@ validation:
 
 mlflow:
   experiment_name: Churn_Prediction_Pipeline
-  tracking_uri: http://localhost:5000
+  tracking_uri: sqlite:///mlflow.db

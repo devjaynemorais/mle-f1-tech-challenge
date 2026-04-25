@@ -7,9 +7,9 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://127.0.0.1:8080",
+      "value": "http://127.0.0.1:8000",
       "type": "string",
-      "description": "URL base da API. Troque para http://localhost:8080 (local) ou a URL do deploy em nuvem."
+      "description": "URL base da API. Troque para http://localhost:8000 (local) ou a URL do deploy em nuvem."
     }
   ],
   "item": [

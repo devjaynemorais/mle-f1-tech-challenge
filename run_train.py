@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_in_venv = sys.prefix != sys.base_prefix
+_in_venv = sys.prefix != sys.base_prefix or bool(os.environ.get("RUNNING_IN_DOCKER"))
 _expected_venv = Path(__file__).parent / ".venv"
 if not _in_venv:
     print(
