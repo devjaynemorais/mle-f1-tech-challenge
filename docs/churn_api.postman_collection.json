@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Churn Prediction API",
-    "description": "API de inferência batch para predição de churn — Telco Customer Churn Tech Challenge Fase 1.\n\nEndpoints disponíveis:\n- GET  /health  — verifica se a API e o modelo estão disponíveis\n- POST /predict — predição batch: recebe lista de clientes, retorna probabilidade e label de churn\n\nConfigure a variável `base_url` para apontar para o ambiente desejado.",
+    "description": "API de inferência batch para predição de churn — Telco Customer Churn Tech Challenge Fase 1.\n\n## O que é churn?\nChurn é o cancelamento do serviço pelo cliente. O modelo retorna a probabilidade de um cliente cancelar nos próximos meses com base no seu perfil.\n\n## Arquitetura batch\nO endpoint POST /predict recebe uma lista de clientes em um único request e processa todos de uma vez — o modelo MLP recebe o batch inteiro como tensor e retorna uma predição por cliente. Não é necessário fazer uma chamada por cliente.\n\n## Endpoints\n- GET  /health  — verifica se a API e o modelo estão disponíveis\n- POST /predict — predição batch: recebe array de clientes, retorna probabilidade e label de churn para cada um\n\n## Entendendo as features\n\n**Tenure Months** — tempo de permanência do cliente na operadora em meses.\n- Tenure baixo (< 12): cliente novo, sem vínculo, fácil de cancelar → alto risco\n- Tenure alto (> 36): cliente fiel, já passou por insatisfações e ficou → baixo risco\n\n**Contract** — tipo de contrato:\n- Month-to-month: sem multa de cancelamento → alto risco\n- One year / Two year: compromisso contratual → baixo risco\n\n**Internet Service** — tipo de internet:\n- Fiber optic: serviço mais caro, mais reclamações → correlacionado com churn\n- DSL: mais barato e estável → menor churn\n- No: sem internet → baixíssimo churn\n\n**Online Security / Tech Support** — serviços de suporte:\n- Clientes sem esses serviços cancelam mais (ficam sem amparo quando têm problemas)\n\n**Payment Method** — forma de pagamento:\n- Electronic check: pagamento manual, menos comprometimento → mais churn\n- Bank transfer / Credit card (automatic): pagamento automático → menos churn\n\n**CLTV** — Customer Lifetime Value: valor estimado do cliente para a empresa. Clientes com CLTV baixo tendem a cancelar mais.\n\n## Configuração\nConfigure a variável `base_url` para apontar para o ambiente desejado (local ou nuvem).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -63,7 +63,7 @@
           "host": ["{{base_url}}"],
           "path": ["predict"]
         },
-        "description": "Cliente com contrato mensal, fibra óptica e poucos meses de tenure — perfil de alto risco de churn."
+        "description": "Perfil de ALTO RISCO de churn. Sinais que levaram a essa classificação:\n\n- **Tenure Months = 2**: cliente há apenas 2 meses na operadora. Tenure é o tempo de permanência — clientes novos não têm vínculo com a marca e cancelam com muito mais frequência.\n- **Contract = Month-to-month**: sem multa de cancelamento, pode sair a qualquer momento.\n- **Internet Service = Fiber optic**: internet mais cara e com mais reclamações no dataset — correlacionada com churn.\n- **Online Security / Tech Support / Device Protection / Online Backup = No**: sem serviços de suporte. Quando surge um problema técnico, o cliente não tem amparo e cancela.\n- **Payment Method = Electronic check**: pagamento manual, menos comprometimento financeiro com a empresa.\n- **CLTV = 2500**: valor estimado baixo para a empresa.\n\nEsses padrões são visíveis na EDA (notebook 01_exploratory_data_analysis.ipynb): clientes com Tenure < 12 e contrato Month-to-month têm taxa de churn muito acima da média."
       },
       "response": [
         {
@@ -108,7 +108,7 @@
           "host": ["{{base_url}}"],
           "path": ["predict"]
         },
-        "description": "Cliente fiel: contrato de 2 anos, muitos serviços contratados, alto tenure — baixo risco de churn."
+        "description": "Perfil de BAIXO RISCO de churn. Sinais que levaram a essa classificação:\n\n- **Tenure Months = 60**: cliente há 5 anos na operadora. Alto tenure indica fidelidade — esse cliente já passou por momentos de insatisfação e escolheu ficar. O custo de troca para ele é alto.\n- **Contract = Two year**: contrato de 2 anos com multa de cancelamento. Compromisso contratual reduz churn drasticamente.\n- **Internet Service = DSL**: internet mais barata e estável. Menor número de reclamações no dataset.\n- **Online Security / Online Backup / Tech Support = Yes**: cliente protegido com serviços de suporte. Quando tem problemas, é atendido — menos motivo para cancelar.\n- **Partner = Yes / Dependents = Yes**: cliente com família. Perfil mais estável e menos propenso a trocas.\n- **Payment Method = Bank transfer (automatic)**: débito automático. Cliente com pagamento configurado automaticamente tende a permanecer mais.\n- **CLTV = 5800**: alto valor para a empresa — tende a ser um cliente premium.\n\nEsses padrões são consistentes com a análise do dataset: clientes com Tenure > 36 e contrato anual têm taxa de churn próxima de zero."
       },
       "response": [
         {
@@ -153,7 +153,7 @@
           "host": ["{{base_url}}"],
           "path": ["predict"]
         },
-        "description": "Exemplo com 3 clientes em um único request batch: novo (alto risco), senior (alto risco) e fiel (baixo risco)."
+        "description": "Demonstração da arquitetura batch: 3 clientes enviados em um único request, processados juntos pelo modelo MLP.\n\n**Cliente 1 — ALTO RISCO** (predictions[0]):\n- Tenure = 1 mês: recém chegou na operadora\n- Contrato Month-to-month sem parceiro ou dependentes\n- Fiber optic sem nenhum serviço de suporte\n- Primeiro mês de conta (Total Charges ≈ Monthly Charges)\n\n**Cliente 2 — ALTO RISCO** (predictions[1]):\n- Senior Citizen = Yes: idosos têm maior taxa de churn no dataset (dificuldade com tecnologia ou busca por planos mais simples)\n- Tenure = 12 meses: ainda no início da relação com a operadora\n- Fiber optic com conta alta (R$95/mês) e sem suporte técnico\n- Contrato Month-to-month\n\n**Cliente 3 — BAIXO RISCO** (predictions[2]):\n- Tenure = 48 meses: 4 anos de cliente fiel\n- Contrato One year com pagamento automático\n- DSL com vários serviços (Security, Backup, Tech Support)\n- Tem parceiro e dependentes — perfil familiar estável\n\n**Por que usar batch?**\nEnviar múltiplos clientes em um único request é mais eficiente: o modelo processa todos como um tensor de uma vez, reduzindo overhead de rede e latência total."
       },
       "response": [
         {
@@ -194,7 +194,7 @@
           "host": ["{{base_url}}"],
           "path": ["predict"]
         },
-        "description": "Teste de validação: lista vazia deve retornar 422 Unprocessable Entity."
+        "description": "Teste de validação Pydantic: enviar lista vazia em `records` deve retornar 422 Unprocessable Entity.\n\nO schema exige `min_length=1` no campo records — pelo menos 1 cliente por requisição. O FastAPI valida automaticamente e rejeita o request antes de chegar ao modelo."
       },
       "response": [
         {
