@@ -271,18 +271,49 @@ curl -X POST http://localhost:8080/predict \
 }
 ```
 
-### Docker
+### Rodando com Docker
+
+> **Pré-requisito:** Docker instalado e rodando. Baixe em [docker.com/get-started](https://www.docker.com/get-started).
+
+**Passo 1 — Gere os artefatos do modelo** (se ainda não tiver):
 
 ```bash
-make docker-build   # constrói a imagem churn-api:latest
-make docker-run     # sobe o container na porta 8080
+python run_train.py
 ```
 
-Ou manualmente:
+O Docker copia a pasta `models/` para dentro da imagem. Sem os artefatos gerados, a API não terá modelo para carregar.
+
+**Passo 2 — Construa a imagem:**
 
 ```bash
 docker build -t churn-api:latest .
+```
+
+**Passo 3 — Suba o container:**
+
+```bash
 docker run -p 8080:8080 churn-api:latest
+```
+
+A API ficará disponível em [http://localhost:8080/docs](http://localhost:8080/docs).
+
+**Testar os endpoints:**
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Predição batch
+curl -X POST http://localhost:8080/predict \
+  -H "Content-Type: application/json" \
+  -d '{"records": [{"gender":"Male","Senior Citizen":"No","partner":"Yes","dependents":"No","Tenure Months":24,"Phone Service":"Yes","Multiple Lines":"No","Internet Service":"Fiber optic","Online Security":"No","Online Backup":"No","Device Protection":"No","Tech Support":"No","Streaming TV":"Yes","Streaming Movies":"Yes","contract":"Month-to-month","Paperless Billing":"Yes","Payment Method":"Electronic check","Monthly Charges":85.0,"Total Charges":2040.0,"CLTV":3500}]}'
+```
+
+**Parar o container:**
+
+```bash
+docker ps                        # lista containers ativos e anota o CONTAINER ID
+docker stop <CONTAINER ID>
 ```
 
 ---
