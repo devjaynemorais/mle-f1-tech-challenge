@@ -109,11 +109,12 @@ features:
 
 
 model:
-  name: logistic_regression
+  name: mlp
   random_state: 42
   test_size: 0.3
-  model_path: models/rf_baseline.pkl
+  model_path: models/mlp_baseline.pt
   scaler_path: models/scaler.pkl
+  mlp_scaler_path: models/mlp_scaler.pkl
 
   params:
     C: 1.0
