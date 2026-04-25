@@ -1,23 +1,28 @@
-"""
-    Esse Módulo atua com um plug&play das funções do módulo de engenharia de features,
-    aplicando as transformações selecionadas no arquivo de configuração .yaml, durante a etapa
-    de experimentação.
-"""
+"""Aplica as transformações de feature engineering selecionadas no config YAML."""
 
-from .feature_engineering import *
+from .feature_engineering import (
+    add_city_region_mapping,
+    add_contract_ordinal,
+    add_engagement_score,
+    add_family_stability,
+    add_fiber_no_support,
+    add_tenure_group,
+    add_tenure_log,
+    drop_churn_score,
+    drop_city,
+)
 
 
 def apply_feature_engineering(df, config):
-
     if config["features"]["drop_churn_score"]["enabled"]:
         df = drop_churn_score(df)
-    
+
     if config["features"]["drop_city"]["enabled"]:
         df = drop_city(df)
 
     if config["features"]["engagement_score"]["enabled"]:
         df = add_engagement_score(df)
-    
+
     if config["features"]["tenure_log"]["enabled"]:
         df = add_tenure_log(df)
 
@@ -32,7 +37,7 @@ def apply_feature_engineering(df, config):
 
     if config["features"]["fiber_no_support"]["enabled"]:
         df = add_fiber_no_support(df)
-    
+
     if config["features"]["city_region_mapping"]["enabled"]:
         df = add_city_region_mapping(df)
 

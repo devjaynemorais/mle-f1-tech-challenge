@@ -1,4 +1,4 @@
-"""Avalia todos os modelos treinados no conjunto de teste e exibe tabela comparativa."""
+"""Carrega o modelo de produção e avalia no conjunto de teste."""
 # ruff: noqa: E402
 import sys
 from pathlib import Path
@@ -13,32 +13,26 @@ import yaml
 
 from src.evaluation.metrics import compute_metrics
 from src.models.mlp import MLP
+from src.utils.logging_config import get_logger
 
-SKLEARN_MODELS = {
-    "DummyClassifier": "models/dummy_classifier.pkl",
-    "LogisticRegression": "models/logistic_regression.pkl",
-    "RandomForest": "models/rf_baseline.pkl",
-}
-MLP_MODEL_PATH = "models/mlp_baseline.pt"
-MLP_SCALER_PATH = "models/mlp_scaler.pkl"
-
+logger = get_logger(__name__)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def predict_sklearn(model, X):
+def _predict_sklearn(model, X: np.ndarray) -> np.ndarray:
     return model.predict_proba(X)[:, 1]
 
 
-def predict_mlp(X, scaler):
+def _predict_mlp(X: np.ndarray, model_path: str, scaler_path: str) -> np.ndarray:
+    scaler = joblib.load(scaler_path)
     X_sc = scaler.transform(X).astype(np.float32)
-    X_tensor = torch.tensor(X_sc).to(DEVICE)
-
     model = MLP(input_dim=X_sc.shape[1]).to(DEVICE)
-    model.load_state_dict(torch.load(MLP_MODEL_PATH, map_location=DEVICE))
+    model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.eval()
-
     with torch.no_grad():
-        probs = torch.sigmoid(model(X_tensor)).cpu().numpy().ravel()
+        probs = (
+            torch.sigmoid(model(torch.tensor(X_sc).to(DEVICE))).cpu().numpy().ravel()
+        )
     return probs
 
 
@@ -46,34 +40,27 @@ def predict():
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
-    print("Carregando dados de teste...")
+    logger.info("Carregando dados de teste...")
     test_df = pd.read_csv(config["data"]["test_path"])
     target = config["features"]["target_column"]
     X_test = test_df.drop(columns=[target]).values
     y_test = test_df[target].values
 
-    results = []
+    model_name = config["model"]["name"]
+    model_path = config["model"]["model_path"]
+    logger.info("Carregando modelo de produção: %s (%s)", model_name, model_path)
 
-    for name, path in SKLEARN_MODELS.items():
-        print(f"Avaliando {name}...")
-        model = joblib.load(path)
-        proba = predict_sklearn(model, X_test)
-        metrics = compute_metrics(y_test, proba)
-        results.append({"modelo": name, **metrics})
+    if model_name == "mlp":
+        proba = _predict_mlp(X_test, model_path, config["model"]["mlp_scaler_path"])
+    else:
+        proba = _predict_sklearn(joblib.load(model_path), X_test)
 
-    print("Avaliando MLP...")
-    mlp_scaler = joblib.load(MLP_SCALER_PATH)
-    proba = predict_mlp(X_test, mlp_scaler)
     metrics = compute_metrics(y_test, proba)
-    results.append({"modelo": "MLP", **metrics})
-
-    table = pd.DataFrame(results).set_index("modelo")
-    table.columns = ["Recall", "Precision", "F1", "AUC"]
-    table = table.sort_values("Recall", ascending=False)
-
-    print("\n=== Comparativo de Modelos (Test Set) ===")
-    print(table.to_string(float_format=lambda x: f"{x:.4f}"))
-    print()
+    logger.info("=== Resultado — Modelo de Produção: %s ===", model_name)
+    logger.info("  Recall   : %.4f", metrics["recall"])
+    logger.info("  Precision: %.4f", metrics["precision"])
+    logger.info("  F1       : %.4f", metrics["f1"])
+    logger.info("  AUC      : %.4f", metrics["auc"])
 
 
 if __name__ == "__main__":

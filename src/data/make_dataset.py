@@ -1,15 +1,22 @@
 """Script to read raw data, clean it, and save as interim."""
+# ruff: noqa: E402
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import numpy as np
 import pandas as pd
 import yaml
 
+from src.utils.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 def process_data():
-    # load config.yaml
     BASE_DIR = Path(__file__).resolve().parents[2]
     config_path = BASE_DIR / "config" / "config.yaml"
-
 
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -17,65 +24,46 @@ def process_data():
     raw_path = BASE_DIR / config["data"]["raw_path"]
     interim_path = BASE_DIR / config["data"]["interim_path"]
 
-    # load raw data
-    print(f"Lendo base raw de: {raw_path}")
+    logger.info("Lendo base raw de: %s", raw_path)
     df = pd.read_excel(raw_path)
 
-    # cleaning data
-    print("Iniciando limpeza dos dados...")
-    print("Verificando dados duplicados...")
+    logger.info("Verificando dados duplicados...")
     if df.duplicated().sum() > 0:
-        print("removendo dados duplicados...")
+        logger.info("Removendo %d duplicatas...", df.duplicated().sum())
         df = df.drop_duplicates()
     else:
-        print("Nenhum dado duplicado encontrado.")
+        logger.info("Nenhum dado duplicado encontrado.")
 
-    # sessão para dados faltantes (ver depois)
-    print("Verificando dados faltantes...")
-    if df.isnull().sum().sum() > 0:
-        print(f"{df.isnull().sum().sum()} dados faltantes encontrados.")
-    else:
-        print("Nenhum dado faltante encontrado.")
+    logger.info("Verificando dados faltantes...")
+    n_missing = df.isnull().sum().sum()
+    if n_missing > 0:
+        logger.info("%d dados faltantes encontrados.", n_missing)
 
-    print("Convertendo Total Charges para numérico (preenchendo vazios com 0)...")
+    logger.info("Convertendo Total Charges para numérico...")
     df["Total Charges"] = pd.to_numeric(df["Total Charges"].replace(" ", np.nan))
-    df['Total Charges'] = df['Total Charges'].fillna(0)
+    df["Total Charges"] = df["Total Charges"].fillna(0)
 
-
-    print("Removendo Colunas desnecessárias...")
     drop_cols = [
-        'Country',
-        'State',
-        'Lat Long',
-        'Churn Label',
-        'Churn Reason',
-        'Latitude',
-        'Longitude',
-        'Zip Code',
-        'Count'
+        "Country",
+        "State",
+        "Lat Long",
+        "Churn Label",
+        "Churn Reason",
+        "Latitude",
+        "Longitude",
+        "Zip Code",
+        "Count",
     ]
-
+    logger.info("Removendo colunas desnecessárias: %s", drop_cols)
     df.drop(columns=drop_cols, inplace=True)
 
-    print("Verificando se há valores nulos...")
-    if df.isnull().sum().sum() > 0:
-        print(f"{df.isnull().sum().sum()} valores nulos encontrados.")
-    else:
-        print("Nenhum valor nulo encontrado.")
-    
-    # checando informações gerais
-    print("===== INFORMAÇÕES GERAIS =====\n")
-    print(f"Total de linhas: {df.shape[0]}")
-    print(f"Total de colunas: {df.shape[1]}")
-    print("===== TIPOS DE DADOS =====\n")
-    print(df.info())
+    logger.info("Dataset final: %d linhas x %d colunas", df.shape[0], df.shape[1])
 
-    # salvando dados limpos em interim
-    print(f"Salvando dados limpos em {interim_path}...")
+    logger.info("Salvando dados limpos em %s...", interim_path)
     df.to_csv(interim_path, index=False)
-    print("make_dataset.py concluído!")
-
+    logger.info("make_dataset.py concluído!")
     return df
+
 
 if __name__ == "__main__":
     process_data()

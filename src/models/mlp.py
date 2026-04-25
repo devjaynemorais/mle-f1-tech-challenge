@@ -38,28 +38,17 @@ def train_epoch(
     criterion,
     device: torch.device = DEFAULT_DEVICE,
 ) -> float:
-    """
-    Executa uma época de treino.
-
-    Retorna
-    -------
-    float — loss médio da época
-    """
+    """Executa uma época de treino. Retorna loss médio."""
     model.train()
     total_loss = 0.0
-
     for X_batch, y_batch in dataloader:
         X_batch = X_batch.to(device)
         y_batch = y_batch.to(device).unsqueeze(1)
-
         optimizer.zero_grad()
-        outputs = model(X_batch)
-        loss = criterion(outputs, y_batch)
+        loss = criterion(model(X_batch), y_batch)
         loss.backward()
         optimizer.step()
-
         total_loss += loss.item()
-
     return total_loss / len(dataloader)
 
 
@@ -70,33 +59,78 @@ def evaluate(
     device: torch.device = DEFAULT_DEVICE,
     threshold: float = 0.5,
 ) -> tuple:
-    """
-    Avalia o modelo em um dataloader.
-
-    Retorna
-    -------
-    tuple (loss médio, dict de métricas)
-    """
+    """Avalia o modelo. Retorna (loss médio, dict de métricas)."""
     model.eval()
     total_loss = 0.0
     preds = []
     targets = []
-
     with torch.no_grad():
         for X_batch, y_batch in dataloader:
             X_batch = X_batch.to(device)
             y_batch = y_batch.to(device).unsqueeze(1)
-
             outputs = model(X_batch)
-            loss = criterion(outputs, y_batch)
-            probs = torch.sigmoid(outputs)
-
-            preds.append(probs.cpu())
+            total_loss += criterion(outputs, y_batch).item()
+            preds.append(torch.sigmoid(outputs).cpu())
             targets.append(y_batch.cpu())
-            total_loss += loss.item()
-
     preds = torch.cat(preds).numpy()
     targets = torch.cat(targets).numpy()
-    metrics = compute_metrics(targets, preds, threshold=threshold)
+    return total_loss / len(dataloader), compute_metrics(targets, preds, threshold)
 
-    return total_loss / len(dataloader), metrics
+
+def train_with_early_stopping(
+    model: nn.Module,
+    train_loader,
+    val_loader,
+    optimizer,
+    criterion,
+    device: torch.device,
+    max_epochs: int = 50,
+    patience: int = 7,
+    threshold: float = 0.5,
+    logger=None,
+) -> int:
+    """
+    Treina o MLP com early stopping baseado na val loss.
+
+    Restaura os melhores pesos ao final.
+    Retorna o número de épocas efetivamente treinadas.
+    """
+    best_val_loss = float("inf")
+    patience_counter = 0
+    best_state = None
+
+    for epoch in range(1, max_epochs + 1):
+        train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
+        val_loss, _ = evaluate(model, val_loader, criterion, device, threshold)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+        else:
+            patience_counter += 1
+
+        if epoch % 10 == 0 and logger:
+            logger.info(
+                "Época %3d/%d  train_loss=%.4f  val_loss=%.4f  paciência=%d/%d",
+                epoch,
+                max_epochs,
+                train_loss,
+                val_loss,
+                patience_counter,
+                patience,
+            )
+
+        if patience_counter >= patience:
+            if logger:
+                logger.info(
+                    "Early stopping na época %d (melhor val_loss=%.4f)",
+                    epoch,
+                    best_val_loss,
+                )
+            break
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    return epoch
