@@ -1,8 +1,10 @@
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 _in_venv = sys.prefix != sys.base_prefix
+_expected_venv = Path(__file__).parent / ".venv"
 if not _in_venv:
     print(
         "ERRO: ambiente virtual não está ativo.\n"
@@ -26,8 +28,10 @@ def run_step(script_path):
 
 if __name__ == "__main__":
     scripts = [
-        "src/models/predict_model.py",
+        "src/data/make_dataset.py",
+        "src/features/build_features.py",
+        "src/models/train_model.py",
     ]
     for script in scripts:
         run_step(script)
-    print("\n[+] INFERÊNCIA CONCLUÍDA COM SUCESSO!")
+    print("\n[+] PIPELINE DE TREINO CONCLUÍDO COM SUCESSO!")
