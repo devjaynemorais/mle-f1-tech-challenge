@@ -213,7 +213,7 @@ Para trocar o modelo de produção, altere `model.name` e `model_path` em `confi
 
 ```bash
 make api
-# equivalente a: uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
@@ -296,7 +296,7 @@ make lint          # ruff check .
 make test          # pytest tests/ -v
 make train         # python run_train.py
 make inference     # python run_inference.py
-make api           # uvicorn src.api.main:app --reload --port 8000
+make api           # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 make docker-build  # docker build -t churn-api:latest .
 make docker-run    # docker run -p 8000:8000 churn-api:latest
 ```

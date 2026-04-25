@@ -24,7 +24,7 @@ async def latency_middleware(request: Request, call_next):
     response = await call_next(request)
     latency_ms = (time.perf_counter() - start) * 1000
     logger.info(
-        "%s %s → %d  latência=%.1fms",
+        "%s %s -> %d  latency=%.1fms",
         request.method,
         request.url.path,
         response.status_code,
