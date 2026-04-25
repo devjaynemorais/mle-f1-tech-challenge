@@ -14,13 +14,13 @@ O desenvolvimento abrange desde a Análise Exploratória de Dados (EDA) até o t
   - `external/`: Dados de fontes de terceiros.
 - `docs/`: Documentações de regras de negócios, arquitetura e anotações.
 - `models/`: Artefatos serializados gerados pelo pipeline (pesos `.pth`, modelos `.pkl`, scalers).
-- `notebooks/`: Notebooks Jupyter para experimentação e análises de dados.
+- `notebooks/`: Notebooks Jupyter de experimentação e análise (EDA, baselines, MLP, MVP).
 - `src/`: Pacotes Python do projeto, organizados por responsabilidade:
   - `src/data/`: Carga, limpeza e divisão dos dados brutos.
   - `src/features/`: Engenharia de features e encoders customizados.
-  - `src/models/`: Arquitetura MLP (PyTorch), treino, predição e orquestração de experimentos.
+  - `src/models/`: Arquitetura MLP (PyTorch), treino de produção e inferência.
   - `src/evaluation/`: Métricas ML (`compute_metrics`) e métricas de negócio (CLTV, perda esperada).
-  - `src/utils/`: Funções auxiliares de EDA, plots e estatísticas.
+  - `src/utils/`: Funções auxiliares de EDA, plots e estatísticas (usadas nos notebooks).
 - `tests/`: Suítes de testes automatizados com `pytest`.
 
 ## ⚙️ Configuração (Setup)
@@ -62,103 +62,181 @@ Utilizamos o `pyproject.toml` como a nossa **Single Source of Truth** (única fo
    playwright install chromium
    ```
 
-## 🚀 Execução 
+## 🚀 Execução
 
-Com o ambiente ativado e dependências resolvidas, você já pode operar todas as faces analíticas do projeto.
+Ative o ambiente virtual antes de qualquer execução:
 
-- **Exploração e Notebooks**:
-  ```bash
-  jupyter notebook
-  ```
-  *(Confira o notebook inicial: `notebooks/01_exploratory_data_analysis.ipynb`)*
+| Sistema | Comando |
+|---|---|
+| PowerShell (Windows) | `.\.venv\Scripts\Activate.ps1` |
+| Bash (Linux/Mac) | `source .venv/bin/activate` |
+| Git Bash (Windows) | `source .venv/Scripts/activate` |
 
-- **Executar a suíte de Testes Unitários**:
+O projeto tem **três fluxos independentes:**
+
+| # | Fluxo | Quando usar | Como executar |
+|---|---|---|---|
+| 1 | [Experimento](#-1-experimento) | Explorar e validar hipóteses | Notebooks Jupyter |
+| 2 | [Treino](#-2-treino) | Treinar os modelos para produção | `python run_train.py` |
+| 3 | [Inferência](#-3-inferência) | Avaliar modelos treinados | `python run_inference.py` |
+
+---
+
+## 🧪 1. Experimento
+
+> **Quando usar:** fase de exploração — analisar dados, testar features, comparar modelos e decidir qual configuração seguir para produção.
+>
+> **Ferramenta:** Notebooks Jupyter em `notebooks/`  
+> **Pré-requisito:** ambiente virtual ativo e dependências instaladas.
+
+### Execute o Jupyter
+
+```bash
+jupyter notebook
+```
+
+### Notebooks disponíveis
+
+| Notebook | O que faz |
+|---|---|
+| `01_exploratory_data_analysis.ipynb` | EDA completa — qualidade, distribuição, correlações |
+| `02_baselines.ipynb` | Modelos baseline: DummyClassifier, Regressão Logística, MLP |
+| `03_experimentação.ipynb` | Experimentação com features e hiperparâmetros, tracking MLflow |
+| `04_modelo_mvp.ipynb` | Seleção e documentação do modelo MVP final |
+
+> Notebooks que usam MLflow requerem o servidor em terminal separado:
+> ```bash
+> mlflow server --host 127.0.0.1 --port 5000
+> ```
+
+---
+
+## 🏭 2. Treino
+
+> **Quando usar:** após os experimentos, para treinar o modelo de produção com os dados completos, gerar os artefatos e registrar no MLflow.
+>
+> **Script:** `run_train.py`  
+> **Config:** `config/config.yaml` — `model.name` define qual modelo treinar.  
+> **Pré-requisito:** dados brutos em `data/raw/Telco_customer_churn.xlsx`.
+
+### Passo 1 — (Opcional) Suba o MLflow para visualizar os runs
+
+```bash
+mlflow server --host 127.0.0.1 --port 5000
+```
+
+O pipeline roda sem o servidor; os runs ficam salvos localmente em `mlruns/`.
+
+### Passo 2 — Execute o treino
+
+```bash
+python run_train.py
+```
+
+### Passos executados em sequência
+
+| # | Script | Entrada | Saída |
+|---|---|---|---|
+| 1 | `src/data/make_dataset.py` | `data/raw/Telco_customer_churn.xlsx` | `data/interim/telecom_clean.csv` |
+| 2 | `src/features/build_features.py` | `data/interim/telecom_clean.csv` | `data/processed/train.csv`, `test.csv`, `models/scaler.pkl` |
+| 3 | `src/models/train_model.py` | `data/processed/train.csv` | Modelo em `models/` + run no MLflow |
+
+Se qualquer etapa falhar, o pipeline aborta e exibe o passo com erro.
+
+### Artefatos gerados
+
+O modelo salvo depende do `model.name` em `config/config.yaml`:
+
+| `model.name` | Artefato salvo em `model_path` |
+|---|---|
+| `logistic_regression` | `models/logistic_regression.pkl` |
+| `random_forest` | `models/rf_baseline.pkl` |
+| `mlp` | `models/mlp_baseline.pt` + `models/mlp_scaler.pkl` |
+| `dummy` | `models/dummy_classifier.pkl` |
+
+### Saída no terminal
+
+```
+--- Treinando modelo de produção: logistic_regression ---
+  CV recall=0.8149  CV auc=0.8572
+  Train — recall=0.8211  auc=0.8623
+  Test  — recall=0.7950  auc=0.8531
+  Overfitting recall: 3.2%
+
+train_model.py concluído! Modelo salvo em models/logistic_regression.pkl
+```
+
+---
+
+## 🔮 3. Inferência
+
+> **Quando usar:** com o modelo já treinado, para avaliar sua performance no conjunto de teste.
+>
+> **Script:** `run_inference.py`  
+> **Config:** `config/config.yaml` — `model.name` define qual modelo carregar.  
+> **Pré-requisito:** modelo treinado em `models/` e dados em `data/processed/test.csv` — gerados pelo [Treino](#-2-treino).
+
+### Execute a inferência
+
+```bash
+python run_inference.py
+```
+
+### Saída esperada
+
+```
+=== Resultado — Modelo de Produção: logistic_regression ===
+  Recall   : 0.7950
+  Precision: 0.5168
+  F1       : 0.6264
+  AUC      : 0.8531
+```
+
+Para trocar o modelo avaliado, altere `model.name` e `model_path` em `config/config.yaml` e re-execute o treino.
+
+---
+
+## 🐛 Troubleshooting
+
+### UnicodeEncodeError ao rodar no Windows
+
+Scripts que usam MLflow (`experiments/run_train.py`, `src/models/train_model.py`) podem falhar no Windows com o erro abaixo ao finalizar um run:
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f3c3'
+```
+
+**Causa:** o MLflow imprime um emoji ao encerrar cada run, e o console Windows usa cp1252 por padrão, que não suporta esse caractere.
+
+**Solução aplicada:** os scripts já incluem o fix automático de encoding para Windows. Caso o erro persista (ex: em outro terminal), use:
+
+```bash
+# Git Bash / Bash
+PYTHONIOENCODING=utf-8 python run_train.py
+
+# PowerShell
+$env:PYTHONIOENCODING='utf-8'; python run_train.py
+```
+
+---
+
+## 🔧 Outros comandos úteis
+
+- **Testes unitários**:
   ```bash
   pytest
   ```
 
-- **Verificação de Padrão e Linting**:
-  Mantemos o formato e a limpeza de código com ferramentas baseadas nas configurações globais do `pyproject.toml`.
+- **Linting**:
   ```bash
-  black .
-  isort .
   ruff check .
   ```
 
-- **Executar o Pipeline Completo** (pré-processamento → features → treino → predição):
+- **Notebooks** (requer MLflow rodando):
   ```bash
-  python run_inference.py
+  mlflow server --host 127.0.0.1 --port 5000  # terminal 1
+  jupyter notebook                              # terminal 2
   ```
-  O pipeline executa automaticamente na seguinte ordem, usando `config/config.yaml`:
-  1. `src/data/make_dataset.py` — carrega e limpa os dados brutos
-  2. `src/features/build_features.py` — engenharia de features
-  3. `src/models/train_model.py` — treina o modelo e registra experimento no MLflow
-  4. `src/models/predict_model.py` — gera predições
-
-- **Visualizar experimentos no MLflow UI**:
-
-  **Opção 1 — Somente leitura local** (mais simples):
-  ```bash
-  mlflow ui
-  ```
-
-  **Opção 2 — Servidor completo com API REST** (necessário para logar experimentos dos notebooks):
-  ```bash
-  mlflow server --host 127.0.0.1 --port 5000
-  ```
-
-  Acesse [http://localhost:5000](http://localhost:5000) no navegador para ver métricas, parâmetros e artefatos.
-
-  > **Obrigatório para rodar os notebooks** (`02_baselines`, `03_experimentação`, `04_modelo_mvp`): os notebooks usam `mlflow.set_tracking_uri("http://localhost:5000")` e falharão com `ConnectionRefusedError` se o servidor não estiver ativo. Suba o servidor antes de abrir o Jupyter:
-  > ```bash
-  > mlflow server --host 127.0.0.1 --port 5000
-  > ```
-  > Em outro terminal:
-  > ```bash
-  > jupyter notebook
-  > ```
-
-## ⚗️ Configuração de Experimentos
-
-Os experimentos são controlados por arquivos YAML em `config/`. Cada arquivo define as features ativas, o modelo, a validação cruzada e as configurações do MLflow.
-
-| Arquivo | Descrição |
-|---|---|
-| `config.yaml` | Configuração principal usada pelo `run_inference.py` |
-| `base_exp.yaml` | Template de baseline — todas as features desativadas |
-| `mvp.yaml` | Configuração do modelo MVP |
-
-### Ativando e desativando features
-
-Cada feature de engenharia pode ser ligada/desligada diretamente no YAML, sem alterar código:
-
-```yaml
-# config/base_exp.yaml
-features:
-  engagement_score:
-    enabled: true   # ativa score de serviços contratados
-
-  valuable_high_risk:
-    enabled: false  # desativa flag de clientes valiosos com alto risco
-```
-
-### Rodando um experimento com validação cruzada
-
-O módulo `experiments/run_train.py` orquestra a experimentação: aplica as features configuradas, executa validação cruzada estratificada e loga métricas e parâmetros no MLflow.
-
-Para usar, carregue um YAML e chame `run_experiment()` — como feito nos notebooks `03` e `04`:
-
-```python
-import yaml
-from experiments.run_train import run_experiment
-
-with open("config/base_exp.yaml") as f:
-    config = yaml.safe_load(f)
-
-metrics = run_experiment(df, config)
-```
-
-As métricas logadas incluem: `roc_auc`, `f1`, `recall` (média e desvio padrão), além de KPIs de negócio — `captured_value`, `expected_loss` e `capture_value_ratio` baseados no CLTV dos clientes.
 
 ## 📓 Notebooks
 
@@ -167,7 +245,7 @@ Os notebooks seguem uma ordem progressiva de análise e experimentação:
 | Notebook | Descrição |
 |---|---|
 | `01_exploratory_data_analysis.ipynb` | Análise exploratória dos dados (EDA) |
-| `02_baseline.ipynb` | Modelos baseline (Dummy, Regressão Logística, MLP) |
+| `02_baselines.ipynb` | Modelos baseline (Dummy, Regressão Logística, MLP) |
 | `03_experimentação.ipynb` | Experimentação e refinamento de modelos |
 | `04_modelo_mvp.ipynb` | Modelo final MVP |
 
@@ -201,5 +279,5 @@ Gera `docs/ml_canvas.pdf` em formato A3 paisagem com fidelidade total ao visual 
 
 ## 📁 Dados
 
-O dataset utilizado é o **Telco Customer Churn** (`data/raw/Telco-Customer-Churn.csv`).  
-Os dados processados são gerados automaticamente na pasta `data/processed/` ao executar o pipeline.
+O dataset utilizado é o **Telco Customer Churn** (`data/raw/Telco_customer_churn.xlsx`).  
+Os dados processados são gerados automaticamente na pasta `data/processed/` ao executar `python run_train.py`.
