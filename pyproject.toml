@@ -49,3 +49,4 @@ line_length = 88
 [tool.ruff]
 line-length = 88
 target-version = "py39"
+per-file-ignores = {"notebooks/*.ipynb" = ["F821"]}  # cross-cell refs válidas em notebooks
