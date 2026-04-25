@@ -10,6 +10,8 @@ if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import socket
+
 import joblib
 import mlflow
 import mlflow.pytorch
@@ -33,6 +35,28 @@ from src.models.mlp import MLP, evaluate, train_with_early_stopping
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def _check_mlflow_server(tracking_uri: str) -> None:
+    if not tracking_uri.startswith("http"):
+        return
+    from urllib.parse import urlparse
+
+    parsed = urlparse(tracking_uri)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 5000
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            pass
+    except OSError:
+        logger.error(
+            "MLflow nao esta rodando em %s. Suba o servidor antes de treinar:\n"
+            "  mlflow server --host 127.0.0.1 --port %d",
+            tracking_uri,
+            port,
+        )
+        sys.exit(1)
+
 
 MLP_MAX_EPOCHS = 100
 MLP_PATIENCE = 10
@@ -245,6 +269,8 @@ MODELS_TO_TRAIN = {
 def train():
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
+
+    _check_mlflow_server(config["mlflow"]["tracking_uri"])
 
     model_name = config["model"]["name"]
     if model_name not in MODELS_TO_TRAIN:
