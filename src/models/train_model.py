@@ -1,7 +1,12 @@
-"""Script to train machine learning models."""
+"""Script to train the production model defined in config.model.name."""
 # ruff: noqa: E402
+import io
 import sys
 from pathlib import Path
+
+if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -51,7 +56,6 @@ def _log_train_test_metrics(metrics_train, metrics_test, overfitting_recall):
     mlflow.log_metric("train_precision", metrics_train["precision"])
     mlflow.log_metric("train_f1", metrics_train["f1"])
     mlflow.log_metric("train_auc", metrics_train["auc"])
-
     mlflow.log_metric("test_recall", metrics_test["recall"])
     mlflow.log_metric("test_precision", metrics_test["precision"])
     mlflow.log_metric("test_f1", metrics_test["f1"])
@@ -64,7 +68,6 @@ def train_dummy(X_train, y_train, X_test, y_test, config):
         strategy="most_frequent", random_state=config["model"]["random_state"]
     )
     model.fit(X_train, y_train)
-
     metrics_train = compute_metrics(y_train, model.predict_proba(X_train)[:, 1])
     metrics_test = compute_metrics(y_test, model.predict_proba(X_test)[:, 1])
     overfitting = _overfitting_recall(metrics_train["recall"], metrics_test["recall"])
@@ -77,7 +80,7 @@ def train_dummy(X_train, y_train, X_test, y_test, config):
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
         mlflow.sklearn.log_model(model, "dummy_classifier")
 
-    joblib.dump(model, "models/dummy_classifier.pkl")
+    joblib.dump(model, config["model"]["model_path"])
     _print_results(metrics_train, metrics_test, overfitting)
 
 
@@ -88,7 +91,6 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
         shuffle=cv_config["shuffle"],
         random_state=config["model"]["random_state"],
     )
-
     pipeline = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -103,7 +105,6 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
             ),
         ]
     )
-
     scoring = {
         "recall": "recall",
         "precision": "precision",
@@ -111,12 +112,10 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
         "auc": "roc_auc",
     }
     cv_results = cross_validate(pipeline, X_train, y_train, cv=cv, scoring=scoring)
-
     pipeline.fit(X_train, y_train)
     metrics_train = compute_metrics(y_train, pipeline.predict_proba(X_train)[:, 1])
     metrics_test = compute_metrics(y_test, pipeline.predict_proba(X_test)[:, 1])
     overfitting = _overfitting_recall(metrics_train["recall"], metrics_test["recall"])
-
     lr_params = pipeline.named_steps["model"].get_params()
 
     with mlflow.start_run(run_name="LogisticRegression"):
@@ -127,16 +126,14 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
         mlflow.log_param("cv_folds", cv_config["n_splits"])
         mlflow.log_param("n_samples_train", len(X_train))
         mlflow.log_param("n_features", X_train.shape[1])
-
         mlflow.log_metric("cv_recall", np.mean(cv_results["test_recall"]))
         mlflow.log_metric("cv_precision", np.mean(cv_results["test_precision"]))
         mlflow.log_metric("cv_f1", np.mean(cv_results["test_f1"]))
         mlflow.log_metric("cv_auc", np.mean(cv_results["test_auc"]))
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
-
         mlflow.sklearn.log_model(pipeline, "logistic_regression_pipeline")
 
-    joblib.dump(pipeline, "models/logistic_regression.pkl")
+    joblib.dump(pipeline, config["model"]["model_path"])
     cv_recall = np.mean(cv_results["test_recall"])
     cv_auc = np.mean(cv_results["test_auc"])
     print(f"  CV recall={cv_recall:.4f}  CV auc={cv_auc:.4f}")
@@ -146,7 +143,6 @@ def train_logistic_regression(X_train, y_train, X_test, y_test, config):
 def train_random_forest(X_train, y_train, X_test, y_test, config):
     model = RandomForestClassifier(random_state=config["model"]["random_state"])
     model.fit(X_train, y_train)
-
     metrics_train = compute_metrics(y_train, model.predict_proba(X_train)[:, 1])
     metrics_test = compute_metrics(y_test, model.predict_proba(X_test)[:, 1])
     overfitting = _overfitting_recall(metrics_train["recall"], metrics_test["recall"])
@@ -168,10 +164,8 @@ def train_mlp(X_train, y_train, X_test, y_test, config):
     scaler = StandardScaler()
     X_train_sc = scaler.fit_transform(X_train).astype(np.float32)
     X_test_sc = scaler.transform(X_test).astype(np.float32)
-
     y_tr = y_train.astype(np.float32)
     y_te = y_test.astype(np.float32)
-
     pos_weight = torch.tensor([(y_tr == 0).sum() / (y_tr == 1).sum()])
 
     train_loader = DataLoader(
@@ -183,7 +177,6 @@ def train_mlp(X_train, y_train, X_test, y_test, config):
         TensorDataset(torch.tensor(X_test_sc), torch.tensor(y_te)),
         batch_size=MLP_BATCH_SIZE,
     )
-
     model = MLP(input_dim=X_train_sc.shape[1]).to(DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=MLP_LR, weight_decay=MLP_WD)
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight.to(DEVICE))
@@ -211,9 +204,9 @@ def train_mlp(X_train, y_train, X_test, y_test, config):
         _log_train_test_metrics(metrics_train, metrics_test, overfitting)
         mlflow.pytorch.log_model(model, "mlp_baseline")
 
-    torch.save(model.state_dict(), "models/mlp_baseline.pt")
-    joblib.dump(scaler, "models/mlp_scaler.pkl")
-    print("  Modelo salvo em models/mlp_baseline.pt")
+    torch.save(model.state_dict(), config["model"]["model_path"])
+    joblib.dump(scaler, config["model"]["mlp_scaler_path"])
+    print(f"  Modelo salvo em {config['model']['model_path']}")
     _print_results(metrics_train, metrics_test, overfitting)
 
 
@@ -229,6 +222,11 @@ def train():
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
 
+    model_name = config["model"]["name"]
+    if model_name not in MODELS_TO_TRAIN:
+        opts = list(MODELS_TO_TRAIN.keys())
+        raise ValueError(f"Modelo '{model_name}' não reconhecido. Opções: {opts}")
+
     print("Carregando base de treino...")
     train_df = pd.read_csv(config["data"]["train_path"])
     test_df = pd.read_csv(config["data"]["test_path"])
@@ -242,11 +240,11 @@ def train():
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
 
-    for name, train_fn in MODELS_TO_TRAIN.items():
-        print(f"\n--- Treinando: {name} ---")
-        train_fn(X_train, y_train, X_test, y_test, config)
-
-    print("\ntrain_model.py concluído!")
+    print(f"\n--- Treinando modelo de produção: {model_name} ---")
+    MODELS_TO_TRAIN[model_name](X_train, y_train, X_test, y_test, config)
+    print(
+        f"\ntrain_model.py concluído! Modelo salvo em {config['model']['model_path']}"
+    )
 
 
 if __name__ == "__main__":

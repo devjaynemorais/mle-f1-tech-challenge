@@ -1,4 +1,4 @@
-"""Avalia todos os modelos treinados no conjunto de teste e exibe tabela comparativa."""
+"""Carrega o modelo de produção e avalia no conjunto de teste."""
 # ruff: noqa: E402
 import sys
 from pathlib import Path
@@ -14,27 +14,20 @@ import yaml
 from src.evaluation.metrics import compute_metrics
 from src.models.mlp import MLP
 
-SKLEARN_MODELS = {
-    "DummyClassifier": "models/dummy_classifier.pkl",
-    "LogisticRegression": "models/logistic_regression.pkl",
-    "RandomForest": "models/rf_baseline.pkl",
-}
-MLP_MODEL_PATH = "models/mlp_baseline.pt"
-MLP_SCALER_PATH = "models/mlp_scaler.pkl"
-
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def predict_sklearn(model, X):
+def _predict_sklearn(model, X: np.ndarray) -> np.ndarray:
     return model.predict_proba(X)[:, 1]
 
 
-def predict_mlp(X, scaler):
+def _predict_mlp(X: np.ndarray, model_path: str, scaler_path: str) -> np.ndarray:
+    scaler = joblib.load(scaler_path)
     X_sc = scaler.transform(X).astype(np.float32)
     X_tensor = torch.tensor(X_sc).to(DEVICE)
 
     model = MLP(input_dim=X_sc.shape[1]).to(DEVICE)
-    model.load_state_dict(torch.load(MLP_MODEL_PATH, map_location=DEVICE))
+    model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     model.eval()
 
     with torch.no_grad():
@@ -52,28 +45,24 @@ def predict():
     X_test = test_df.drop(columns=[target]).values
     y_test = test_df[target].values
 
-    results = []
+    model_name = config["model"]["name"]
+    model_path = config["model"]["model_path"]
 
-    for name, path in SKLEARN_MODELS.items():
-        print(f"Avaliando {name}...")
-        model = joblib.load(path)
-        proba = predict_sklearn(model, X_test)
-        metrics = compute_metrics(y_test, proba)
-        results.append({"modelo": name, **metrics})
+    print(f"Carregando modelo de produção: {model_name} ({model_path})...")
 
-    print("Avaliando MLP...")
-    mlp_scaler = joblib.load(MLP_SCALER_PATH)
-    proba = predict_mlp(X_test, mlp_scaler)
+    if model_name == "mlp":
+        proba = _predict_mlp(X_test, model_path, config["model"]["mlp_scaler_path"])
+    else:
+        model = joblib.load(model_path)
+        proba = _predict_sklearn(model, X_test)
+
     metrics = compute_metrics(y_test, proba)
-    results.append({"modelo": "MLP", **metrics})
 
-    table = pd.DataFrame(results).set_index("modelo")
-    table.columns = ["Recall", "Precision", "F1", "AUC"]
-    table = table.sort_values("Recall", ascending=False)
-
-    print("\n=== Comparativo de Modelos (Test Set) ===")
-    print(table.to_string(float_format=lambda x: f"{x:.4f}"))
-    print()
+    print(f"\n=== Resultado — Modelo de Produção: {model_name} ===")
+    print(f"  Recall   : {metrics['recall']:.4f}")
+    print(f"  Precision: {metrics['precision']:.4f}")
+    print(f"  F1       : {metrics['f1']:.4f}")
+    print(f"  AUC      : {metrics['auc']:.4f}")
 
 
 if __name__ == "__main__":
