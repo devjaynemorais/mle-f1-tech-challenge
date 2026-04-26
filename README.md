@@ -230,6 +230,33 @@ Acesse a documentação interativa em [http://localhost:8000/docs](http://localh
 | `GET` | `/health` | Verifica se a API e o modelo estão disponíveis |
 | `POST` | `/predict` | Predição batch — recebe lista de clientes, retorna probabilidades |
 
+### Validação de entrada (Pydantic)
+
+Toda requisição ao `/predict` é validada automaticamente pelo Pydantic v2 antes de chegar ao modelo. Erros retornam **HTTP 422** com o campo exato que falhou.
+
+**Campos numéricos** — rejeita valores negativos:
+
+| Campo | Restrição |
+|---|---|
+| `Tenure Months` | `>= 0` |
+| `Monthly Charges` | `>= 0` |
+| `Total Charges` | `>= 0` |
+| `CLTV` | `>= 0` |
+
+**Campos categóricos** — apenas os valores presentes no dataset IBM Telco são aceitos (`Literal`):
+
+| Campo | Valores aceitos |
+|---|---|
+| `gender` | `"Male"`, `"Female"` |
+| `Senior Citizen`, `partner`, `dependents`, `Phone Service`, `Paperless Billing` | `"Yes"`, `"No"` |
+| `Multiple Lines` | `"Yes"`, `"No"`, `"No phone service"` |
+| `Internet Service` | `"DSL"`, `"Fiber optic"`, `"No"` |
+| `Online Security`, `Online Backup`, `Device Protection`, `Tech Support`, `Streaming TV`, `Streaming Movies` | `"Yes"`, `"No"`, `"No internet service"` |
+| `contract` | `"Month-to-month"`, `"One year"`, `"Two year"` |
+| `Payment Method` | `"Electronic check"`, `"Mailed check"`, `"Bank transfer (automatic)"`, `"Credit card (automatic)"` |
+
+> A validação categórica é importante porque o modelo foi treinado com one-hot encoding dessas categorias exatas — um valor desconhecido silenciosamente viraria coluna zero, corrompendo a predição sem nenhum erro. O Pydantic rejeita na entrada antes que isso aconteça.
+
 ### Exemplo de requisição
 
 ```bash
