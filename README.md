@@ -230,6 +230,33 @@ Acesse a documentação interativa em [http://localhost:8000/docs](http://localh
 | `GET` | `/health` | Verifica se a API e o modelo estão disponíveis |
 | `POST` | `/predict` | Predição batch — recebe lista de clientes, retorna probabilidades |
 
+### Validação de entrada (Pydantic)
+
+Toda requisição ao `/predict` é validada automaticamente pelo Pydantic v2 antes de chegar ao modelo. Erros retornam **HTTP 422** com o campo exato que falhou.
+
+**Campos numéricos** — rejeita valores negativos:
+
+| Campo | Restrição |
+|---|---|
+| `Tenure Months` | `>= 0` |
+| `Monthly Charges` | `>= 0` |
+| `Total Charges` | `>= 0` |
+| `CLTV` | `>= 0` |
+
+**Campos categóricos** — apenas os valores presentes no dataset IBM Telco são aceitos (`Literal`):
+
+| Campo | Valores aceitos |
+|---|---|
+| `gender` | `"Male"`, `"Female"` |
+| `Senior Citizen`, `partner`, `dependents`, `Phone Service`, `Paperless Billing` | `"Yes"`, `"No"` |
+| `Multiple Lines` | `"Yes"`, `"No"`, `"No phone service"` |
+| `Internet Service` | `"DSL"`, `"Fiber optic"`, `"No"` |
+| `Online Security`, `Online Backup`, `Device Protection`, `Tech Support`, `Streaming TV`, `Streaming Movies` | `"Yes"`, `"No"`, `"No internet service"` |
+| `contract` | `"Month-to-month"`, `"One year"`, `"Two year"` |
+| `Payment Method` | `"Electronic check"`, `"Mailed check"`, `"Bank transfer (automatic)"`, `"Credit card (automatic)"` |
+
+> A validação categórica é importante porque o modelo foi treinado com one-hot encoding dessas categorias exatas — um valor desconhecido silenciosamente viraria coluna zero, corrompendo a predição sem nenhum erro. O Pydantic rejeita na entrada antes que isso aconteça.
+
 ### Exemplo de requisição
 
 ```bash
@@ -364,6 +391,20 @@ make test
 | `tests/test_smoke.py` | Carregamento do modelo, MLP, scaler e feature_columns |
 | `tests/test_schema.py` | Schema dos datasets (Pandera): tipos, nulos, proporção do split |
 | `tests/test_api.py` | Endpoints `/health` e `/predict`, validação Pydantic, header de latência |
+
+### Smoke tests (`test_smoke.py`)
+
+Verificam que a infraestrutura do modelo está intacta **sem subir a API**. Rodam em segundos e são o primeiro diagnóstico quando algo quebra após um novo treino.
+
+| Teste | O que verifica |
+|---|---|
+| `test_config_carrega` | `config/config.yaml` carrega e `model.name` é um dos modelos suportados |
+| `test_modelo_producao_existe` | Arquivo do modelo apontado em `config.yaml` existe no disco |
+| `test_mlp_carrega_e_prediz` | MLP instancia, executa forward pass com tensor `(4, 31)` e retorna probabilidades em `[0, 1]` |
+| `test_scaler_carrega` | `models/mlp_scaler.pkl` carrega e transforma uma matriz `(5, 31)` sem erros |
+| `test_feature_columns_json_existe` | `models/feature_columns.json` existe, não está vazio e contém strings |
+
+> Os smoke tests **não dependem de dados processados** — só dos artefatos gerados pelo treino (`models/`). Se falharem, o problema está nos artefatos, não na API.
 
 ---
 
