@@ -392,6 +392,20 @@ make test
 | `tests/test_schema.py` | Schema dos datasets (Pandera): tipos, nulos, proporção do split |
 | `tests/test_api.py` | Endpoints `/health` e `/predict`, validação Pydantic, header de latência |
 
+### Smoke tests (`test_smoke.py`)
+
+Verificam que a infraestrutura do modelo está intacta **sem subir a API**. Rodam em segundos e são o primeiro diagnóstico quando algo quebra após um novo treino.
+
+| Teste | O que verifica |
+|---|---|
+| `test_config_carrega` | `config/config.yaml` carrega e `model.name` é um dos modelos suportados |
+| `test_modelo_producao_existe` | Arquivo do modelo apontado em `config.yaml` existe no disco |
+| `test_mlp_carrega_e_prediz` | MLP instancia, executa forward pass com tensor `(4, 31)` e retorna probabilidades em `[0, 1]` |
+| `test_scaler_carrega` | `models/mlp_scaler.pkl` carrega e transforma uma matriz `(5, 31)` sem erros |
+| `test_feature_columns_json_existe` | `models/feature_columns.json` existe, não está vazio e contém strings |
+
+> Os smoke tests **não dependem de dados processados** — só dos artefatos gerados pelo treino (`models/`). Se falharem, o problema está nos artefatos, não na API.
+
 ---
 
 ## 📋 ML Canvas
