@@ -20,7 +20,7 @@ class MLP(nn.Module):
     """
 
     def __init__(self, input_dim: int, hidden_dim: int = 64, output_dim: int = 1):
-        super().__init__()
+        super(MLP, self).__init__()
         self.features = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
