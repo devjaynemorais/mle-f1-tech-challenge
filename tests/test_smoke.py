@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import joblib
+import numpy as np
 import torch
 import yaml
 
@@ -59,3 +60,34 @@ def test_feature_columns_json_existe():
     cols = json.load(open(path))
     assert len(cols) > 0
     assert isinstance(cols[0], str)
+
+
+def test_mlp_wrapper_fit_predict():
+    from sklearn.datasets import make_classification
+
+    from src.utils.exp import MLPClassifierWrapper
+
+    X, y = make_classification(
+        n_samples=80,
+        n_features=12,
+        n_informative=6,
+        n_redundant=2,
+        random_state=42,
+    )
+
+    clf = MLPClassifierWrapper(
+        hidden_dim=16,
+        batch_size=16,
+        max_epochs=3,
+        patience=2,
+        val_size=0.2,
+        random_state=42,
+    )
+    clf.fit(X, y)
+
+    proba = clf.predict_proba(X[:10])
+    pred = clf.predict(X[:10])
+
+    assert proba.shape == (10, 2)
+    assert pred.shape == (10,)
+    assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-6)
