@@ -2,173 +2,185 @@
 
 ## Objetivo
 
-Estabelecer um fluxo estruturado e reprodutível para desenvolvimento de modelos preditivos de churn, equilibrando performance estatística, impacto financeiro e viabilidade operacional.
+Estabelecer um fluxo estruturado e reprodutível para desenvolvimento de modelos de churn, equilibrando performance técnica, risco de leakage e viabilidade operacional.
 
-## Princípios Norteadores
-1.	Começar simples e evoluir com evidência.
-2.	Separar predição de decisão de negócio.
-3.	Comparar modelos sob mesmas condições experimentais.
-4.	Usar métricas técnicas e econômicas em conjunto.
-5.	Reduzir complexidade antes de aprofundar simulações.
+## Princípios norteadores
 
-## Protocolo de Validação: 
+1. Começar simples e evoluir com evidência.
+2. Comparar modelos nas mesmas condições experimentais.
+3. Separar predição de decisão de negócio.
+4. Tratar geografia como bloco experimental próprio.
+5. Preservar a mesma espinha dorsal de pipeline entre baseline e rounds avançados.
 
-**Validação Cruzada Estratificada - `StratifiedKFold`**
+## Protocolo de validação
 
-**Motivo**: Base moderadamente desbalanceada, optando por não considerar técnicas de balanceamento nesse primeiro momento.
+**Validação cruzada estratificada com `StratifiedKFold`**
 
-## Visão geral do Workflow de Experimentação
-### Fase 1 — Baseline Inicial (MVP)
-#### Objetivo
+Motivo:
+- a base é moderadamente desbalanceada;
+- queremos medir ganho de feature engineering sem misturar técnicas de balanceamento neste momento.
 
-Realizar uma exploração técnica rápida para avaliar o poder preditivo inicial do dataset, construindo um modelo de regressão logística e dummy como baseline inicial e comparando com outros diferentes modelos (MLP, RandomForest, XGBoost e DecisionTree).
+## Visão geral do workflow
 
-#### **Principais KPI's técnicos**
-`PR AUC` e `ROC AUC` seguem como métricas principais por fornecerem uma visão mais global do desempenho do modelo sem depender tanto de um threshold que será otimizado futuramente. 
+### Fase 1 — Baseline inicial
 
->**IMPORTANTE**: consultar `KPI.md` para uma melhor descrição das métricas.
+Objetivo:
+- medir o sinal preditivo inicial da base;
+- comparar `Dummy`, `LogisticRegression`, `MLP` e modelos de árvore;
+- escolher o benchmark tabular.
 
-**Benchmark para PR-AUC**
+Saída esperada:
+- tabela comparativa com `PR-AUC`, `ROC-AUC`, `Recall`, `Precision`, `F1`, tempos e estabilidade de CV.
 
-| PR AUC / Base rate | Interpretação    |
-| ------------------ | ---------------- |
-| 1.0x               | Aleatório        |
-| 1.2x               | Fraco            |
-| 1.5x               | Útil             |
-| 2.0x               | Bom              |
-| 3.0x               | Muito forte      |
-| 4x+                | Excelente / raro |
+### Fase 2 — Feature engineering estrutural
 
+Objetivo:
+- adicionar features de negócio derivadas da EDA sem misturar score legado nem tratamento geográfico especial.
 
-**Benchmark para ROC-AUC**
-| ROC AUC     | Interpretação                   |
-| ----------- | ------------------------------- |
-| 0.50        | Aleatório                       |
-| 0.55 – 0.60 | Fraco                           |
-| 0.60 – 0.70 | Básico / MVP                    |
-| 0.70 – 0.80 | Bom                             |
-| 0.80 – 0.90 | Muito bom                       |
-| > 0.90      | Excelente / raro em dados reais |
-| 1.00        | Perfeito (suspeito em produção) |
+Features estruturais:
+- `tenure_group_ordinal`
+- `tenure_log`
+- `service_score`
+- `contract_ordinal`
+- `family_stability`
+- `fiber_no_support`
+- `support_gap_count`
+- `payment_automatic_flag`
+- `electronic_check_flag`
+- `paperless_echeck_flag`
+- `price_pressure_ratio`
 
+Regras:
+- `Churn Score` fica fora nesta fase;
+- geografia também fica fora desta fase principal.
 
-#### **KPI's Secundários (possível desempate)**
-- Recall
-- Precision
-- F1-Score
-- Tempo de treino 
-- Estabilidade CV 
-- Overfitting/underfitting (learning curve, validation curves)
-- Interpretabilidade básica (feature importance, coeficientes, SHAP)
+### Fase 3 — Rodadas geográficas controladas
 
-#### **O que queremos responder:**
+Objetivo:
+- testar o sinal geográfico separadamente via `GeoTransformer`, sem reescrever o notebook nem alterar o pipeline produtivo.
 
-- Há sinal preditivo nas features atuais? 
-- O dataset é minimamente útil? 
-- Problema linear ou não linear? 
-- As árvores dominam? 
-- Overfitting aparece cedo? 
-- Qual benchmark mínimo aceitável para experimentação?
+Estratégias disponíveis:
+- `drop`
+- `frequency`
+- `target`
+- `risk_band`
+- `zip_region`
+- `geo_cluster`
 
+Por que essa fase é separada:
+- `target` e `risk_band` dependem do alvo;
+- `zip_region` e `geo_cluster` dependem de colunas geográficas brutas;
+- queremos preservar comparabilidade entre rounds.
 
-#### **Saída:**
-- **No Jupyter Notebook:** Tabela Comparativa entre modelos contendo os KPI’s técnicos como output + visualizações gráficas (**learning curve**, **plot importance**, etc)
+### Fase 4 — Ablação com `Churn Score`
 
-    Exemplo:
+Objetivo:
+- medir separadamente o efeito de incluir `Churn Score`, já que ele representa informação derivada de outro modelo.
 
-    | Modelo   | PR AUC | ROC AUC | Recall | Precision | F1-Score | Fit time | Score time | Estabilidade CV |
-    |----------|--------|---------|--------|-----------|----------|----------|------------|-----------------|
-    | Logistic | 0.41   | 0.72    | 0.63   | 0.53      | 0.57     | 0.0132   | 0.0124     | 3%              |
-    | XGB      | 0.49   | 0.70    | 0.67   | 0.51      | 0.54     | 0.123    | 0.124      | 4%              |
-    | MLP      | 0.48   | 0.75    | 0.69   | 0.55      | 0.59     | 0.204    | 0.124      | 2%              |
+### Fase 5 — Seleção de features
 
-- **No MLFlow:** logging dos experimentos, métricas e artefatos (gráficos não nativos) no MLFlow.
-  
-  Exemplo: 
-  - Experiment 1 - baseline_models
-  - Experiment 2 - benchmark_models
+Objetivo:
+- otimizar subconjuntos de features mantendo toda a lógica dentro do `Pipeline`.
 
-#### **Conclusão:**
+Estratégias:
+- `SelectKBest` com `f_classif`
+- `SelectKBest` com `mutual_info_classif`
 
+Motivo:
+- evita leakage;
+- mantém a seleção dentro de cada fold;
+- facilita comparação entre `LogisticRegression`, `MLP` e benchmark de árvore.
 
+### Fase 6 — Tunagem
 
-### Fase 2 — Feature Engineering
-#### **Objetivo**
-Adicionar poder preditivo ao modelo de forma controlada e avaliar nos modelos candidatos.
+Objetivo:
+- aprofundar principalmente a `MLP` após estabilizar a melhor versão técnica do dataset.
 
-#### **Features Adicionadas**
-- **Targeting Encoding na variável `City`**: Substitui a cidade pela taxa histórica de Churn daquela cidade. Mas precisa fazer em validação cruzada **out-of-fold** para evitar leakage.
-- **Agrupamento de `Ternure`**: Durante a EDA ficou evidente que o churn é mais comum em clientes mais novos do que em clientes antigos. A ideia é agrupar Ternure em faixas e aplicar OrdinalEncoding mantendo o risco de acordo com a monotocidade. Mapping utilizado {'new': 2, 'mid': 1, 'loyal': 0}.
-- **Transformação Logarítmica de `Ternure`**: A relação entre tempo de permanência do cliente e churn não segue uma relação linear.
-- **digital_engagement_score**: é uma flag que somatiza todos os serviços digitais contratado pelo cliente (retorna um valor numérico de 0 a 4).
-- **Aplicação de Ordinal Encoding na variável `Contract`**: A EDA revelou que a variável de tipo de contrato atua como um proxy de mitigação de churn. Contratos mensais são mais propensos a churn do que contratos anuais, que por sua vez são mais propensos ao churn do que contratos Bi-anuais.
-- **Adição da Flag de Estabilidade Familiar**: Uma flag que sinaliza dependentes o que pode ser uma barreira natural de cancelamento do serviço.
-- **Adição de Flag para Serviço de Fibra, sem Suporte de serviço**: proxy fortíssimo que aumenta muito os casos de churns devido a insatisfação com o serviço contratado.
-- **Adição da variável `Churn_Score`**: variável que é um score de outro modelo interno da empresa.
+### Fase 7 — Avaliação econômica com `CLTV`
 
-#### **Estratégia de Seleção de Features Testadas**
-- **SelectKBest**: `f_classif (test-t ANOVA)` para capturar variabilidade de forma isolada e `mutual_information (teste não paramétrico)` para capturar não linearidades e correlações.
-- **RFE**: Eliminação recursiva, introduz custo computacional, porém retreina o modelo eliminando sempre a pior feature. Bom para capturar interações entre as features.
-- **Model-Based Selection**: Aplicar regularizações nos modelos (L1) e deixar o modelo decidir quais features são mais relevantes. 
+Objetivo:
+- usar `CLTV` como metadata de negócio para avaliar retorno financeiro da priorização.
 
-#### **Saída**
-- **No Jupyter Notebook:** Tabela Comparativa entre modelos contendo os KPI’s técnicos como output + plot importances(subir como artefato no MLFlow para controle features selecionadas)
+Regra:
+- `CLTV` não entra como feature do fluxo-base;
+- ele entra depois como critério econômico de comparação.
 
-    Exemplo:
+## Camada geográfica experimental
 
-    | experimento  | PR AUC | ROC AUC | Recall | Precision | F1-Score | Fit time | Score time | Estabilidade CV |
-    |----------|--------|---------|--------|-----------|----------|----------|------------|-----------------|
-    | RegLog_selKBest_f_classif | 0.41   | 0.72    | 0.63   | 0.53      | 0.57     | 0.0132   | 0.0124     | 3%              |
-    | RegLog_selKBest_MI     | 0.49   | 0.70    | 0.67   | 0.51      | 0.54     | 0.123    | 0.124      | 4%              |
-    | RegLog_L1      | 0.48   | 0.75    | 0.69   | 0.55      | 0.59     | 0.204    | 0.124      | 2%              |
-    | RegLog_RFE | 0.41   | 0.72    | 0.63   | 0.53      | 0.57     | 0.0132   | 0.0124     | 3%              |
-    | XGB_SelKBest_MI      | 0.49   | 0.70    | 0.67   | 0.51      | 0.54     | 0.123    | 0.124      | 4%              |
-    | MLP_SelKBest_f_classif      | 0.48   | 0.75    | 0.69   | 0.55      | 0.59     | 0.204    | 0.124      | 2%              | 
-    | XGB_L1 | 0.41   | 0.72    | 0.63   | 0.53      | 0.57     | 0.0132   | 0.0124     | 3%              |
- 
+### Como funciona
 
-- **No MLFlow:** logging dos experimentos, métricas e artefatos (gráficos não nativos) no MLFlow + dataset versionado para cada experimento junto com as features selecianadas.
-  
-  Exemplo: 
-  - Experiment 3 - benchmark_FE
-    - RegLog_selKBest_f_classif
-    - RegLog_selKBest_MI
-    - RegLog_L1
-    - RegLog_RFE
-    - MLP_SelKBest_f_classif
-    - MLP_SelKBest_MU
-    - MLP_L1
+Toda a geografia fica centralizada no `GeoTransformer`, que controla:
+- consumo de `City`, `Zip Code`, `Latitude` e `Longitude`;
+- geração da feature derivada;
+- remoção das colunas geográficas brutas antes do `preprocessor`.
 
+### Pontos fortes da abordagem
 
-#### **Conclusão**
+- reduz leakage em estratégias supervisionadas;
+- evita drops manuais diferentes por rodada;
+- mantém baseline e experimentos no mesmo esqueleto de pipeline;
+- facilita testes controlados com mudanças pontuais no notebook.
 
+### Estratégias
 
+#### `drop`
+- remove toda a geografia bruta;
+- serve como baseline comparável.
 
+#### `frequency`
+- usa a frequência observada da cidade;
+- simples e estável;
+- não supervisionado.
 
-### Registros no MLFlow
+#### `target`
+- usa taxa média de churn por cidade com smoothing;
+- default de smoothing: `20`;
+- reduz instabilidade de cidades raras.
 
-- Experiment 1 - baseline_models
-- Experiment 2 - benchmark_models
-- Experiment 3 - benchmark_FE
-- Experiment 4 - benchmark_Economics
-- Experiment 5 - tunning_best_model
+#### `risk_band`
+- calcula primeiro uma taxa suavizada de churn por cidade;
+- depois discretiza em `low_risk`, `mid_risk` e `high_risk`;
+- melhora interpretabilidade.
 
-### Estrutura de Notebooks Utilizada
+Observação:
+- `risk_band` não implementa IV/WoE;
+- ele é um target-based encoding discretizado com shrinkage por contagem.
 
-- 02_experiment_fase01_baseline
-- 03_experiment_fase02_FE
-- 04_experiment_fase03_economic_analisys
-- 05_experiment_fase04_tunning_best_model
+#### `zip_region`
+- transforma `Zip Code` em `Geo_Region`;
+- aprende o centróide geográfico de cada ZIP a partir de `Latitude` e `Longitude` no treino experimental;
+- é interpretável e não supervisionado.
 
-### Boas Práticas Adotadas
-- Não misturar feature engineering pesado com simulação econômica em todas as rodadas.
-- Primeiro descubra qual família aprende melhor o problema. Depois descubra quais features maximizam essa família.
-- Primeiro reduzir espaço técnico, depois aprofundar análise financeira.
-- Realizar Tunning apenas no modelo campeão.
-- Decidir o Modelo Campeão com base na Análise Econômica (melhor ROI). Nem sempre Melhor AUC retornará o melhor lucro.
-- CLTV deve ser melhor usado como metadata de decisão do que como feature direta.
-- Durante a Experimentação foram mantidas as mesmas condições em todos os experimentos (splits e premissas de negócio).
+#### `geo_cluster`
+- usa `Latitude` e `Longitude`;
+- ajusta `KMeans` dentro do transformer;
+- escolhe `k` automaticamente pelo método do cotovelo;
+- gera `Geo_Cluster`.
 
-### Regras Gerais
-- Para facilitar a filtragem dos modelos, os resultados foram ordenados na seguinte ordem: PR-AUC > ROC-AUC > Recall > F1-Score > Fit Time > Estabilidade.
-- 
+## Relação com o notebook
+
+O notebook de experimentação mantém a mesma estrutura geral. Os ajustes esperados são apenas pontuais:
+- trocar nomes de estratégia;
+- atualizar parâmetros do `GeoTransformer`;
+- manter a leitura da base raw para suportar `Zip Code`, `Latitude` e `Longitude`.
+
+Não é necessário reorganizar seções nem criar um novo fluxo paralelo.
+
+## Relação com produção
+
+Essas estratégias geográficas novas pertencem apenas à camada de experimentação neste momento.
+
+Motivo:
+- não alteramos `make_dataset.py`;
+- o pipeline produtivo atual continua sem `Zip Code`, `Latitude` e `Longitude`;
+- isso preserva estabilidade operacional enquanto a hipótese geográfica ainda está sendo validada.
+
+## Conclusão
+
+A metodologia atual busca equilibrar rigor experimental e simplicidade operacional:
+- primeiro consolidamos baseline e FE estrutural;
+- depois testamos geografia de forma controlada;
+- só então avançamos para seleção de features, tunagem e avaliação econômica.
+
+Essa ordem mantém a leitura dos resultados mais limpa e reduz o risco de concluir algo sobre `City` quando, na prática, o efeito veio de outra mudança no pipeline.
+

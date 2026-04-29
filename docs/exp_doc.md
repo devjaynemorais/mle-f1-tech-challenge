@@ -122,12 +122,12 @@ Adicionar features derivadas da EDA e medir ganho técnico sem misturar esse efe
 - features derivadas estruturais;
 - transformações justificadas pela EDA;
 - exclusão de `Churn Score` nesta fase;
-- exclusão do tratamento especial de `City` nesta fase principal.
+- exclusão do tratamento geográfico especial nesta fase principal.
 
 #### Não inclui
 
 - `Churn Score`;
-- target encoding de `City`.
+- estratégias geográficas do `GeoTransformer`.
 
 #### O que essa fase responde
 
@@ -137,7 +137,7 @@ Adicionar features derivadas da EDA e medir ganho técnico sem misturar esse efe
 
 #### Por que essa decisão foi tomada
 
-O `Churn Score` representa empilhamento de um modelo anterior, e por isso distorce a leitura do impacto do feature engineering puro. Já `City` com target encoding exige controle adicional de leakage e, por isso, deve ser tratado em etapa separada ou posterior.
+O `Churn Score` representa empilhamento de um modelo anterior, e por isso distorce a leitura do impacto do feature engineering puro. Já a camada geográfica exige controle adicional de leakage e regularização, então deve ser tratada em etapa separada ou posterior.
 
 ### Fase 3 - Dataset com feature engineering + Churn Score
 
@@ -196,23 +196,31 @@ Essa etapa deve ocorrer dentro de `Pipeline`, para garantir que a seleção de f
 
 Fazer `SelectKBest` fora do pipeline aumentaria muito a complexidade da implementação da `MLP` e abriria espaço para erros metodológicos. Dentro do `Pipeline`, a etapa fica automatizada e corretamente encapsulada na validação cruzada.
 
-### Fase 5 - Tratamento especial de City
+### Fase 5 - Tratamento geográfico especial
 
 #### Objetivo
 
-Avaliar a variável `City` separadamente por meio de target encoding, caso o time decida seguir com essa hipótese.
+Avaliar o sinal geográfico separadamente por meio do `GeoTransformer`, comparando estratégias supervisionadas e não supervisionadas sem misturar esse efeito com o restante do feature engineering.
 
 #### Observação importante
 
-Essa fase é separada porque `City` com target encoding tem alto risco de leakage se for implementada sem cuidado.
+Essa fase é separada porque as estratégias geográficas são metodologicamente sensíveis. `target` e `risk_band` dependem do alvo; `zip_region` e `geo_cluster` dependem de colunas geográficas brutas que não fazem parte do fluxo produtivo atual.
 
 #### Requisito metodológico
 
-O encoding precisa ser feito de forma segura dentro do protocolo de validação, idealmente com lógica `out-of-fold` na etapa de treino.
+As transformações precisam acontecer dentro do `Pipeline`, para que o `fit` de cada fold aprenda apenas com os dados de treino. Isso vale tanto para encoders supervisionados (`target`, `risk_band`) quanto para estratégias espaciais (`geo_cluster`).
+
+#### Estratégias avaliadas
+
+- `frequency`: usa a prevalência da cidade no treino;
+- `target`: usa taxa média de churn com smoothing;
+- `risk_band`: usa taxa suavizada de churn e discretiza em `low/mid/high`;
+- `zip_region`: gera `Geo_Region` a partir do centróide geográfico aprendido para cada ZIP;
+- `geo_cluster`: gera `Geo_Cluster` a partir de latitude e longitude com escolha automática de `k`.
 
 #### Por que essa decisão foi tomada
 
-`City` é uma feature potencialmente útil, mas metodologicamente sensível. Separá-la evita contaminar a leitura das demais melhorias de feature engineering.
+O sinal geográfico existe, mas `City` tem alta cardinalidade e muitas classes raras. Separar essa camada evita contaminar a leitura das demais melhorias de FE e permite testar representações mais estáveis e interpretáveis.
 
 ### Fase 6 - Tunagem
 
@@ -289,13 +297,13 @@ Ou seja, além de organizar melhor o código, essa escolha fortalece a validade 
 
 ## Por que tratar City separadamente
 
-`City` é um caso especial porque seu encoding supervisionado depende do alvo. Isso gera risco real de leakage se a média histórica da categoria for calculada de forma ingênua.
+O bloco geográfico é um caso especial porque parte das estratégias depende do alvo e outra parte depende de colunas geográficas brutas que não seguem para produção no fluxo atual. Isso cria risco real de leakage e também risco de inconsistência entre rounds se o tratamento for feito manualmente fora do pipeline.
 
 Portanto:
 
-- `City` não deve entrar misturado com as demais features no primeiro bloco principal de FE;
+- geografia não deve entrar misturada com as demais features no primeiro bloco principal de FE;
 - seu uso deve ser tratado como experimento controlado;
-- a implementação deve ser cuidadosamente desenhada.
+- a implementação deve ser centralizada no `GeoTransformer`.
 
 ## Por que manter a análise econômica depois da definição técnica principal
 
@@ -314,7 +322,7 @@ Essa abordagem evita gastar energia em análise financeira de modelos que já se
 | 2 | Dataset original + FE estrutural | LogReg, MLP, melhor árvore | Medir ganho de FE puro |
 | 3 | FE estrutural + Churn Score | LogReg, MLP, melhor árvore | Medir efeito de stacking |
 | 4 | Fase 2 e/ou 3 + SelectKBest | LogReg, MLP, melhor árvore | Encontrar melhor subconjunto de features por PR-AUC |
-| 5 | Experimento separado com City | LogReg, MLP, melhor árvore | Medir impacto de target encoding controlado |
+| 5 | Experimento geográfico separado | LogReg, MLP, melhor árvore | Medir impacto de `frequency`, `target`, `risk_band`, `zip_region` e `geo_cluster` |
 | 6 | Melhor configuração técnica | MLP prioritariamente | Tunar a MLP |
 | 7 | Avaliação com CLTV | LogReg, MLP, melhor árvore | Comparar desempenho econômico |
 
@@ -323,7 +331,7 @@ Essa abordagem evita gastar energia em análise financeira de modelos que já se
 Como próximo passo de implementação, a ordem sugerida é:
 
 1. transformar o `feature_engineering.py` em transformer compatível com sklearn;
-2. manter `City` fora da primeira versão do transformer;
+2. manter geografia fora do transformer geral;
 3. criar o wrapper da `MLP` para uso em `Pipeline`;
 4. montar pipeline com `FeatureEngineeringTransformer`, `preprocessor`, `SelectKBest` e estimador;
 5. rodar a fase 1 para escolher o benchmark de árvore;
@@ -339,3 +347,4 @@ A estrutura proposta busca equilibrar quatro necessidades do projeto:
 - capacidade de justificar decisões técnicas e econômicas de forma clara.
 
 O desenho final evita leakage, reduz ambiguidade interpretativa e mantém foco no que de fato precisa ser defendido pelo time: se a `MLP`, quando bem estruturada, realmente supera o baseline e se mantém competitiva frente a um benchmark forte, além de gerar valor econômico mensurável.
+

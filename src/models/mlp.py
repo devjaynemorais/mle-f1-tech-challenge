@@ -31,6 +31,39 @@ class MLP(nn.Module):
         return self.out(self.features(X))
 
 
+class CityEmbeddingMLP(nn.Module):
+    """MLP tabular com embedding dedicado para a coluna City."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        n_cities: int,
+        embedding_dim: int = 16,
+        hidden_dim: int = 64,
+        output_dim: int = 1,
+    ):
+        super().__init__()
+        self.city_embedding = nn.Embedding(
+            num_embeddings=n_cities + 1,
+            embedding_dim=embedding_dim,
+            padding_idx=0,
+        )
+        self.features = nn.Sequential(
+            nn.Linear(input_dim + embedding_dim, hidden_dim),
+            nn.ReLU(),
+        )
+        self.out = nn.Linear(hidden_dim, output_dim)
+
+    def forward(
+        self,
+        x_tabular: torch.Tensor,
+        x_city: torch.Tensor,
+    ) -> torch.Tensor:
+        city_vec = self.city_embedding(x_city)
+        x = torch.cat([x_tabular, city_vec], dim=1)
+        return self.out(self.features(x))
+
+
 def train_epoch(
     model: nn.Module,
     dataloader,
