@@ -14,11 +14,17 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_validate, train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from torch.utils.data import DataLoader, TensorDataset
+from xgboost import XGBClassifier
 
+from src.features.feature_engineer_transformer import FeatureEngineerTransformer
+from src.features.geo_transformer import GeoTransformer
 from src.models.mlp import CityEmbeddingMLP, DEFAULT_DEVICE, MLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")
@@ -303,6 +309,198 @@ def infer_city_embedding_dim(n_cities: int) -> int:
     if n_cities <= 0:
         return 4
     return int(min(32, max(4, np.ceil(np.sqrt(n_cities)))))
+
+
+def build_round3_estimator(
+    model_name: str,
+    strategy_name: str,
+    *,
+    preprocessor: Any,
+    fe_params: dict[str, Any],
+    y_reference: Any,
+    target_smoothing: float = 20.0,
+    logistic_params: dict[str, Any] | None = None,
+    xgb_params: dict[str, Any] | None = None,
+    mlp_params: dict[str, Any] | None = None,
+    embedding_params: dict[str, Any] | None = None,
+) -> Any:
+    """Constroi um estimador do Round 3 para um modelo e estrategia geoespacial."""
+    logistic_defaults = {
+        "max_iter": 1000,
+        "class_weight": "balanced",
+        "random_state": 42,
+    }
+    if logistic_params is not None:
+        logistic_defaults.update(logistic_params)
+
+    xgb_defaults = {
+        "objective": "binary:logistic",
+        "eval_metric": "logloss",
+        "scale_pos_weight": float((np.asarray(y_reference) == 0).sum())
+        / max(float((np.asarray(y_reference) == 1).sum()), 1.0),
+        "random_state": 42,
+        "n_jobs": -1,
+    }
+    if xgb_params is not None:
+        xgb_defaults.update(xgb_params)
+
+    mlp_defaults = {
+        "hidden_dim": 64,
+        "batch_size": 64,
+        "lr": 1e-3,
+        "weight_decay": 1e-5,
+        "max_epochs": 80,
+        "patience": 8,
+        "val_size": 0.15,
+        "threshold": 0.5,
+        "random_state": 42,
+        "verbose": False,
+    }
+    if mlp_params is not None:
+        mlp_defaults.update(mlp_params)
+
+    embedding_defaults = {
+        "city_column": "City",
+        "geo_drop_columns": ("Zip Code", "Latitude", "Longitude", "Lat Long"),
+        "embedding_dim": None,
+    }
+    if embedding_params is not None:
+        embedding_defaults.update(embedding_params)
+
+    feature_engineer = FeatureEngineerTransformer(**fe_params)
+
+    if model_name == "LogisticRegression":
+        return Pipeline(
+            [
+                ("fe", feature_engineer),
+                (
+                    "geo",
+                    GeoTransformer(
+                        strategy=strategy_name,
+                        target_smoothing=target_smoothing,
+                    ),
+                ),
+                ("prep", preprocessor),
+                ("scaler", StandardScaler(with_mean=False)),
+                ("model", LogisticRegression(**logistic_defaults)),
+            ]
+        )
+
+    if model_name == "XGBoost":
+        return Pipeline(
+            [
+                ("fe", feature_engineer),
+                (
+                    "geo",
+                    GeoTransformer(
+                        strategy=strategy_name,
+                        target_smoothing=target_smoothing,
+                    ),
+                ),
+                ("prep", preprocessor),
+                ("model", XGBClassifier(**xgb_defaults)),
+            ]
+        )
+
+    if model_name == "MLP":
+        if strategy_name == "city_embedding":
+            return MLPEmbeddingClassifierWrapper(
+                preprocessor=preprocessor,
+                feature_engineer=feature_engineer,
+                **embedding_defaults,
+                **mlp_defaults,
+            )
+
+        return Pipeline(
+            [
+                ("fe", feature_engineer),
+                (
+                    "geo",
+                    GeoTransformer(
+                        strategy=strategy_name,
+                        target_smoothing=target_smoothing,
+                    ),
+                ),
+                ("prep", preprocessor),
+                ("scaler", StandardScaler(with_mean=False)),
+                ("model", MLPClassifierWrapper(**mlp_defaults)),
+            ]
+        )
+
+    raise ValueError(f"Modelo nao suportado no Round 3: {model_name}")
+
+
+def evaluate_round3_model_strategies(
+    model_name: str,
+    strategy_specs: Sequence[tuple[str, str]],
+    *,
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: Any,
+    preprocessor: Any,
+    fe_params: dict[str, Any],
+    y_reference: Any,
+    metrics: Sequence[str] = DEFAULT_METRICS,
+    target_smoothing: float = 20.0,
+    logistic_params: dict[str, Any] | None = None,
+    xgb_params: dict[str, Any] | None = None,
+    mlp_params: dict[str, Any] | None = None,
+    embedding_params: dict[str, Any] | None = None,
+) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    """Avalia todas as estrategias do Round 3 para um unico modelo."""
+    rows_list: list[dict[str, Any]] = []
+    fold_results: dict[str, pd.DataFrame] = {}
+
+    for strategy_name, experiment_name in strategy_specs:
+        estimator = build_round3_estimator(
+            model_name,
+            strategy_name,
+            preprocessor=preprocessor,
+            fe_params=fe_params,
+            y_reference=y_reference,
+            target_smoothing=target_smoothing,
+            logistic_params=logistic_params,
+            xgb_params=xgb_params,
+            mlp_params=mlp_params,
+            embedding_params=embedding_params,
+        )
+
+        cv_res = cross_validate(
+            estimator=estimator,
+            X=X,
+            y=y,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=1,
+            return_train_score=False,
+        )
+
+        fold_df = pd.DataFrame(
+            {
+                "fold": np.arange(1, len(cv_res["fit_time"]) + 1),
+                **{metric: cv_res[f"test_{metric}"] for metric in metrics},
+                "fit_time_s": cv_res["fit_time"],
+                "score_time_s": cv_res["score_time"],
+            }
+        )
+        fold_results[experiment_name] = fold_df
+
+        summary_row = summarize_fold_results(
+            experiment_name,
+            fold_df,
+            metrics=metrics,
+        )
+        summary_row["base_model"] = model_name
+        summary_row["strategy"] = strategy_name
+        rows_list.append(summary_row)
+
+    results_df = (
+        pd.DataFrame(rows_list)
+        .sort_values("pr_auc_mean", ascending=False)
+        .reset_index(drop=True)
+    )
+    return results_df, fold_results
 
 
 class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
