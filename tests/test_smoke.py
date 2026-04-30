@@ -123,3 +123,21 @@ def test_mlp_wrapper_fit_predict():
     assert proba.shape == (10, 2)
     assert pred.shape == (10,)
     assert np.allclose(proba.sum(axis=1), 1.0, atol=1e-6)
+
+
+def test_experimentation_notebook_contains_random_search_exploration_section():
+    import json
+
+    notebook = json.loads(Path("notebooks/02_experimentation.ipynb").read_text(encoding="utf-8"))
+    notebook_source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert "def prepare_random_search_analysis" in notebook_source
+    assert "def build_metric_summary_by_param" in notebook_source
+    assert "def build_top20_stability_summary" in notebook_source
+    assert "def build_pairwise_interaction_summary" in notebook_source
+    assert "Analise exploratoria dos resultados do RandomizedSearchCV" in notebook_source
+    assert "mlp_optuna_analysis_summary" in notebook_source
+    assert "xgb_optuna_analysis_summary" in notebook_source

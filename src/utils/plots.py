@@ -131,3 +131,118 @@ def boxplots_target_binaria(
 
     plt.tight_layout()
     plt.show()
+
+
+def _hide_unused_axes(axes, used_count: int) -> None:
+    axes_array = np.atleast_1d(axes).reshape(-1)
+    for idx in range(used_count, len(axes_array)):
+        axes_array[idx].set_visible(False)
+
+
+def _finalize_figure(fig: plt.Figure, show: bool) -> plt.Figure:
+    fig.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
+
+def plot_random_search_boxplots(
+    df: pd.DataFrame,
+    params: list[str],
+    metric: str = "pr_auc_mean",
+    n_cols: int = 3,
+    figsize_scale: tuple[float, float] = (5.5, 4.0),
+    show: bool = True,
+) -> plt.Figure:
+    """Gera boxplots do metric por hiperparametro discreto/categorico."""
+    if not params:
+        raise ValueError("params nao pode ser vazio.")
+
+    sns.set_style("whitegrid")
+    n_rows = math.ceil(len(params) / n_cols)
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(figsize_scale[0] * n_cols, figsize_scale[1] * n_rows),
+    )
+    axes = np.atleast_1d(axes).reshape(-1)
+
+    for idx, param in enumerate(params):
+        ax = axes[idx]
+        sns.boxplot(data=df, x=param, y=metric, ax=ax, color="skyblue")
+        ax.set_title(param, fontsize=11)
+        ax.set_xlabel(param)
+        ax.set_ylabel(metric)
+        ax.tick_params(axis="x", rotation=30)
+
+    _hide_unused_axes(axes, len(params))
+    fig.suptitle(f"Distribuicao de {metric} por hiperparametro", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_random_search_summary_bars(
+    summary_df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    title: str,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota barras ordenadas para sumarizacoes marginais do RandomizedSearchCV."""
+    sns.set_style("whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    sns.barplot(data=summary_df, x=x_col, y=y_col, ax=ax, color="steelblue")
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.tick_params(axis="x", rotation=30)
+    return _finalize_figure(fig, show)
+
+
+def plot_random_search_ordered_bin_lineplot(
+    summary_df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    title: str,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota linha/pontos para bins ordenados de hiperparametros numericos."""
+    sns.set_style("whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    sns.pointplot(data=summary_df, x=x_col, y=y_col, ax=ax, color="darkorange")
+    ax.set_title(title, fontsize=12, fontweight="bold")
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.tick_params(axis="x", rotation=30)
+    return _finalize_figure(fig, show)
+
+
+def plot_random_search_heatmap(
+    interaction_df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    value_col: str = "pr_auc_mean_median",
+    count_col: str = "count",
+    min_count: int = 3,
+    title: str | None = None,
+    cmap: str = "YlGnBu",
+    show: bool = True,
+) -> plt.Figure:
+    """Plota heatmap de interacao entre dois hiperparametros com mascara por suporte minimo."""
+    pivot_values = interaction_df.pivot(index=y_col, columns=x_col, values=value_col)
+    pivot_counts = interaction_df.pivot(index=y_col, columns=x_col, values=count_col)
+    mask = pivot_counts.fillna(0) < min_count
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.heatmap(
+        pivot_values,
+        mask=mask,
+        annot=True,
+        fmt=".4f",
+        cmap=cmap,
+        cbar=True,
+        ax=ax,
+    )
+    ax.set_title(title or f"{value_col} por {y_col} x {x_col}", fontsize=12, fontweight="bold")
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    return _finalize_figure(fig, show)
