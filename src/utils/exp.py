@@ -176,6 +176,7 @@ def build_k_grid(
     n_features_processed: int,
     min_k: int = 10,
     include_all: bool = True,
+    step: int = 1,
 ) -> list[int | str]:
     """Monta grid de k para SelectKBest com validacao minima."""
     if n_features_processed < min_k:
@@ -183,8 +184,12 @@ def build_k_grid(
             "Numero de features processadas insuficiente para o grid de selecao: "
             f"{n_features_processed} < {min_k}."
         )
+    if step <= 0:
+        raise ValueError(f"step deve ser maior que zero. Recebido: {step}.")
 
-    k_grid: list[int | str] = list(range(min_k, n_features_processed + 1))
+    k_grid: list[int | str] = list(range(min_k, n_features_processed + 1, step))
+    if k_grid[-1] != n_features_processed:
+        k_grid.append(n_features_processed)
     if include_all:
         k_grid.append("all")
     return k_grid
@@ -349,8 +354,10 @@ def build_round3_estimator(
         "batch_size": 64,
         "lr": 1e-3,
         "weight_decay": 1e-5,
+        "dropout": 0.0,
         "max_epochs": 80,
         "patience": 8,
+        "min_delta": 1e-3,
         "val_size": 0.15,
         "threshold": 0.5,
         "random_state": 42,
@@ -512,11 +519,14 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
         self,
         hidden_dim: int = 64,
         output_dim: int = 1,
+        activation: str = "relu",
         batch_size: int = 64,
         lr: float = 1e-3,
         weight_decay: float = 1e-5,
+        dropout: float = 0.0,
         max_epochs: int = 80,
         patience: int = 8,
+        min_delta: float = 1e-3,
         val_size: float = 0.15,
         threshold: float = 0.5,
         random_state: int = 42,
@@ -526,11 +536,14 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
     ) -> None:
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
+        self.activation = activation
         self.batch_size = batch_size
         self.lr = lr
         self.weight_decay = weight_decay
+        self.dropout = dropout
         self.max_epochs = max_epochs
         self.patience = patience
+        self.min_delta = min_delta
         self.val_size = val_size
         self.threshold = threshold
         self.random_state = random_state
@@ -593,6 +606,8 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
             input_dim=self.n_features_in_,
             hidden_dim=self.hidden_dim,
             output_dim=self.output_dim,
+            activation=self.activation,
+            dropout=self.dropout,
         ).to(self.device_)
 
         pos_weight_value = self._compute_pos_weight(y_train)
@@ -616,7 +631,7 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
             train_loss = self._train_one_epoch(train_loader)
             val_loss = self._evaluate_loss(val_loader)
 
-            if val_loss < best_val_loss:
+            if val_loss < (best_val_loss - self.min_delta):
                 best_val_loss = val_loss
                 best_state = copy.deepcopy(self.model_.state_dict())
                 patience_counter = 0
@@ -766,11 +781,14 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
         unknown_city_index: int = 0,
         hidden_dim: int = 64,
         output_dim: int = 1,
+        activation: str = "relu",
         batch_size: int = 64,
         lr: float = 1e-3,
         weight_decay: float = 1e-5,
+        dropout: float = 0.0,
         max_epochs: int = 80,
         patience: int = 8,
+        min_delta: float = 1e-3,
         val_size: float = 0.15,
         threshold: float = 0.5,
         random_state: int = 42,
@@ -786,11 +804,14 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
         self.unknown_city_index = unknown_city_index
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
+        self.activation = activation
         self.batch_size = batch_size
         self.lr = lr
         self.weight_decay = weight_decay
+        self.dropout = dropout
         self.max_epochs = max_epochs
         self.patience = patience
+        self.min_delta = min_delta
         self.val_size = val_size
         self.threshold = threshold
         self.random_state = random_state
@@ -901,6 +922,8 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
             embedding_dim=self.embedding_dim_,
             hidden_dim=self.hidden_dim,
             output_dim=self.output_dim,
+            activation=self.activation,
+            dropout=self.dropout,
         ).to(self.device_)
 
         pos_weight_value = self._compute_pos_weight(y_train)
@@ -924,7 +947,7 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
             train_loss = self._train_one_epoch(train_loader)
             val_loss = self._evaluate_loss(val_loader)
 
-            if val_loss < best_val_loss:
+            if val_loss < (best_val_loss - self.min_delta):
                 best_val_loss = val_loss
                 best_state = copy.deepcopy(self.model_.state_dict())
                 patience_counter = 0

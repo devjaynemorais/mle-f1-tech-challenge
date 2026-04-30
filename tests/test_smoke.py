@@ -43,6 +43,38 @@ def test_mlp_carrega_e_prediz():
     assert (out >= 0).all() and (out <= 1).all()
 
 
+def test_train_with_early_stopping_respects_min_delta(monkeypatch):
+    import src.models.mlp as mlp_module
+    from src.models.mlp import MLP, train_with_early_stopping
+
+    val_losses = iter([1.0, 0.9995, 0.9992, 0.9991])
+
+    monkeypatch.setattr(mlp_module, "train_epoch", lambda *args, **kwargs: 0.5)
+    monkeypatch.setattr(
+        mlp_module,
+        "evaluate",
+        lambda *args, **kwargs: (next(val_losses), {}),
+    )
+
+    model = MLP(input_dim=4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    criterion = torch.nn.BCEWithLogitsLoss()
+
+    epochs_ran = train_with_early_stopping(
+        model=model,
+        train_loader=[],
+        val_loader=[],
+        optimizer=optimizer,
+        criterion=criterion,
+        device=torch.device("cpu"),
+        max_epochs=10,
+        patience=2,
+        min_delta=1e-3,
+    )
+
+    assert epochs_ran == 3
+
+
 def test_scaler_carrega():
     scaler = joblib.load("models/mlp_scaler.pkl")
     import numpy as np
