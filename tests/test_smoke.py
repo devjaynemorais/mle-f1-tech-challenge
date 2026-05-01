@@ -135,9 +135,34 @@ def test_experimentation_notebook_contains_random_search_exploration_section():
     )
 
     assert "def prepare_random_search_analysis" in notebook_source
-    assert "def build_metric_summary_by_param" in notebook_source
-    assert "def build_top20_stability_summary" in notebook_source
-    assert "def build_pairwise_interaction_summary" in notebook_source
-    assert "Analise exploratoria dos resultados do RandomizedSearchCV" in notebook_source
+    assert "def build_value_counts_summary" in notebook_source
+    assert "def build_numeric_describe_summary" in notebook_source
+    assert "def build_groupby_summary" in notebook_source
+    assert "Análise exploratória dos resultados do RandomizedSearchCV" in notebook_source
+    assert "is_top20_stable" in notebook_source
+    assert "pr_auc_std" in notebook_source
     assert "mlp_optuna_analysis_summary" in notebook_source
     assert "xgb_optuna_analysis_summary" in notebook_source
+
+
+def test_experimentation_notebook_has_no_common_mojibake_markers():
+    notebook_text = Path("notebooks/02_experimentation.ipynb").read_text(encoding="utf-8")
+
+    suspicious_sequences = [
+        "Ã§",
+        "Ã£",
+        "Ã¡",
+        "Ã©",
+        "Ã³",
+        "Ãº",
+        "Ã‰",
+        "Ã‡Ã",
+        "ÃƒÂ",
+        "â€™",
+        "â€œ",
+        "â€",
+        "ï¿½",
+    ]
+
+    for sequence in suspicious_sequences:
+        assert sequence not in notebook_text

@@ -487,6 +487,7 @@ def evaluate_round3_model_strategies(
             {
                 "fold": np.arange(1, len(cv_res["fit_time"]) + 1),
                 **{metric: cv_res[f"test_{metric}"] for metric in metrics},
+                "pr_auc_std": cv_res["test_pr_auc"].std(),
                 "fit_time_s": cv_res["fit_time"],
                 "score_time_s": cv_res["score_time"],
             }
