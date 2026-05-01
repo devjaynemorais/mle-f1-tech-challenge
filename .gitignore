@@ -18,7 +18,7 @@ env/
 # Jupyter Notebooks
 .ipynb_checkpoints/
 
-# Dados (Ignorando conteúdo, mas não o .gitkeep)
+# Dados (Ignorando conteudo, mas nao o .gitkeep)
 /data/*
 !/data/.gitkeep
 *.csv
@@ -30,7 +30,7 @@ env/
 *.h5
 *.hdf5
 
-# Modelos (Ignorando conteúdo, mas não o .gitkeep)
+# Modelos (Ignorando conteudo, mas nao o .gitkeep)
 /models/*
 !/models/.gitkeep
 *.pkl
@@ -38,7 +38,7 @@ env/
 *.pth
 *.joblib
 
-# Logs, Métricas e Experimentos
+# Logs, Metricas e Experimentos
 logs/
 *.log
 mlruns/
@@ -53,5 +53,5 @@ Thumbs.db
 *.egg-info/
 *.egg
 
-# Claude Code (configurações locais)
+# Claude Code (configuracoes locais)
 .claude/settings.local.json
