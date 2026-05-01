@@ -214,3 +214,132 @@ Cada experimento deverá registrar:
 ## 6. Diretriz Final
 
 Durante experimentação, priorizar métricas threshold-independent (PR AUC / ROC AUC). Durante decisão operacional, complementar com métricas threshold-dependent (Recall, F1, Precision) e posteriormente métricas econômicas (ROI, revenue saved, churn evitado).
+
+---
+
+## 7. Métricas Econômicas Utilizadas
+
+Esta seção define as métricas econômicas adotadas para avaliar campanhas de retenção baseadas nas previsões do modelo. O objetivo é traduzir a matriz de confusão em impacto financeiro, separando valor recuperado, valor perdido, desperdício operacional e retorno sobre o investimento.
+
+### 7.1 Premissas
+
+As definições abaixo assumem:
+
+* a campanha é acionada para todos os clientes preditos como churn;
+* `TP + FP` representa o total de clientes acionados;
+* `p_i` representa a probabilidade prevista de churn para o cliente `i`;
+* `CLTV_i` representa o valor do cliente `i`;
+* a taxa de retenção da campanha representa a proporção esperada de churners efetivamente retidos após o acionamento.
+
+### 7.2 Valor em Risco Recuperável
+
+**Definição**
+
+Valor financeiro em risco dentro do subconjunto de churners corretamente identificados pelo modelo.
+
+**Fórmula**
+
+`VR = Σ (p_i x CLTV_i), para i em TP`
+
+**Interpretação**
+
+Representa o montante potencialmente recuperável entre os clientes que o modelo decidiu acionar e que de fato pertencem à classe churn.
+
+### 7.3 Valor Recuperado Esperado
+
+**Definição**
+
+Valor esperado recuperado pela campanha após considerar a taxa de retenção.
+
+**Fórmula**
+
+`Vrec = VR x taxa_de_retenção`
+
+**Interpretação**
+
+Nem todo churner acionado será salvo. Por isso, o valor recuperado esperado corresponde apenas à fração do valor em risco que, em média, a campanha consegue preservar.
+
+### 7.4 Valor Perdido
+
+**Definição**
+
+Valor esperado perdido em churners reais que ficaram fora da campanha por erro do modelo.
+
+**Fórmula**
+
+`VP = Σ (p_i x CLTV_i), para i em FN`
+
+**Interpretação**
+
+Corresponde à oportunidade perdida causada por falsos negativos: clientes que churnariam, mas não foram acionados porque o modelo os classificou como não churn.
+
+### 7.5 Custo Médio por Cliente Acionado
+
+**Definição**
+
+Rateio do custo total da campanha entre todos os clientes efetivamente acionados.
+
+**Fórmula**
+
+`CMCA = custo_total_campanha / (TP + FP)`
+
+**Interpretação**
+
+Essa formulação permite distribuir o investimento total da campanha de forma homogênea entre todos os clientes abordados pelo modelo.
+
+### 7.6 Valor Desperdiçado com Falsos Positivos
+
+**Definição**
+
+Parcela do investimento da campanha consumida com clientes acionados desnecessariamente.
+
+**Fórmula**
+
+`VD = FP x CMCA`
+
+**Interpretação**
+
+Mede o desperdício operacional gerado por falsos positivos: clientes que receberam esforço de retenção, mas que não churnariam de qualquer forma.
+
+### 7.7 Impacto Econômico Líquido
+
+**Definição**
+
+Saldo econômico da estratégia considerando valor recuperado, valor perdido e desperdício com falsos positivos.
+
+**Fórmula**
+
+`IEL = Vrec - VP - VD`
+
+**Interpretação**
+
+Esta métrica mostra se a política de acionamento induzida pelo modelo está protegendo mais valor do que deixando escapar ou desperdiçando.
+
+### 7.8 ROI da Campanha
+
+**Definição**
+
+Retorno sobre o investimento total da campanha, considerando tanto o valor recuperado quanto a perda por falsos negativos e o custo total de acionamento.
+
+**Fórmula**
+
+`ROI = (Vrec - VP - custo_total_campanha) / custo_total_campanha`
+
+**Interpretação**
+
+O ROI responde se, depois de descontar o custo integral da campanha, a estratégia baseada no modelo ainda gera retorno financeiro positivo.
+
+### 7.9 Papel de Cada Célula da Matriz de Confusão
+
+* `TP`: concentram o valor recuperável e alimentam `VR` e `Vrec`.
+* `FP`: representam desperdício operacional e alimentam `VD`.
+* `FN`: representam oportunidade perdida e alimentam `VP`.
+* `TN`: não geram recuperação nem custo direto na formulação atual.
+
+### 7.10 Uso Recomendado no Notebook de Modelo Final
+
+No notebook de consolidação do modelo MVP, recomenda-se:
+
+* comparar os modelos no holdout com base em `Vrec`, `VP`, `VD`, `IEL` e `ROI`;
+* analisar o efeito do threshold padrão (`0.5`) versus threshold otimizado;
+* testar sensibilidade do resultado econômico a diferentes premissas de taxa de retenção e custo total de campanha.
