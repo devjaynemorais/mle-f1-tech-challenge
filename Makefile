@@ -1,23 +1,26 @@
-.PHONY: lint test train inference api mlflow \
-        compose-build compose-up compose-train compose-down
+.PHONY: env lint test train inference api mlflow \
+        compose-build compose-up compose-train compose-down compose-monitoring compose-full
+
+env:
+	uv sync --extra dev
 
 lint:
-	ruff check .
+	uv run ruff check .
 
 test:
-	pytest tests/ -v
+	uv run pytest tests/ -v
 
 train:
-	python run_train.py
+	uv run python run_train.py
 
 inference:
-	python run_inference.py
+	uv run python run_inference.py
 
 api:
-	uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+	uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 
 mlflow:
-	mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db --allowed-hosts "127.0.0.1,127.0.0.1:5000"
+	uv run mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db --allowed-hosts "127.0.0.1,127.0.0.1:5000"
 
 # --- Docker Compose ---
 compose-build:
@@ -32,3 +35,9 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+compose-monitoring:
+	docker compose up -d prometheus grafana
+
+compose-full:
+	docker compose up -d mlflow api prometheus grafana
