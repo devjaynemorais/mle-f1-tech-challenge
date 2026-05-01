@@ -2,6 +2,17 @@ import os
 import subprocess
 import sys
 
+_in_venv = sys.prefix != sys.base_prefix or bool(os.environ.get("RUNNING_IN_DOCKER"))
+if not _in_venv:
+    print(
+        "ERRO: ambiente virtual não está ativo.\n"
+        "Ative antes de executar:\n"
+        "  PowerShell : .venv\\Scripts\\Activate.ps1\n"
+        "  Git Bash   : source .venv/Scripts/activate\n"
+        "  Bash/Mac   : source .venv/bin/activate"
+    )
+    sys.exit(1)
+
 ENV = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
 
@@ -15,11 +26,8 @@ def run_step(script_path):
 
 if __name__ == "__main__":
     scripts = [
-        "src/data/make_dataset.py",
-        "src/features/build_features.py",
-        "src/models/train_model.py",
         "src/models/predict_model.py",
     ]
     for script in scripts:
         run_step(script)
-    print("\n[+] PIPELINE COMPLETO EXECUTADO COM SUCESSO!")
+    print("\n[+] INFERÊNCIA CONCLUÍDA COM SUCESSO!")

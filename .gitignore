@@ -52,3 +52,6 @@ artifacts/
 Thumbs.db
 *.egg-info/
 *.egg
+
+# Claude Code (configurações locais)
+.claude/settings.local.json
