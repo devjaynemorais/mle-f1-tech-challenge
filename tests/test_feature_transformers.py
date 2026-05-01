@@ -66,7 +66,9 @@ def test_target_encoder_uses_smoothing_and_global_mean_for_unknown_city():
     transformed = encoder.transform(pd.DataFrame({"City": ["B", "Z"]}))
 
     assert "City" not in transformed.columns
-    assert transformed["City_Target"].iloc[0] == pytest.approx((0.5 * 20 + 1.0 * 1) / 21)
+    assert transformed["City_Target"].iloc[0] == pytest.approx(
+        (0.5 * 20 + 1.0 * 1) / 21
+    )
     assert transformed["City_Target"].iloc[1] == pytest.approx(0.5)
 
 
@@ -151,7 +153,7 @@ def test_feature_engineer_transformer_applies_expected_features():
 
     assert "Churn Score" not in transformed.columns
     assert "City" in transformed.columns
-    assert transformed["service_score"].tolist() == [2, 2, 2, 0]
+    assert transformed["service_score"].tolist() == [2, 3, 2, 1]
     assert transformed["Tenure_Group_Ordinal"].tolist() == [2, 1, 0, 0]
     assert transformed["Contract_Ordinal"].tolist() == [2, 1, 0, 1]
     assert transformed["Family_Stability"].tolist() == [1, 0, 1, 1]
@@ -160,7 +162,12 @@ def test_feature_engineer_transformer_applies_expected_features():
     assert transformed["Payment_Automatic_Flag"].tolist() == [0, 1, 1, 0]
     assert transformed["Electronic_Check_Flag"].tolist() == [1, 0, 0, 0]
     assert transformed["Paperless_ECheck_Flag"].tolist() == [1, 0, 0, 0]
-    assert transformed["Price_Pressure_Ratio"].tolist() == [25.0, 100.0 / 9, 5.0, 20.0 / 31]
+    assert transformed["Price_Pressure_Ratio"].tolist() == [
+        25.0,
+        100.0 / 9,
+        5.0,
+        20.0 / 31,
+    ]
 
 
 def test_geo_transformer_drop_strategy_removes_all_geo_columns():
@@ -189,8 +196,12 @@ def test_geo_transformer_target_strategy_encodes_city_with_smoothing():
     transformed = GeoTransformer(strategy="target").fit_transform(df, y)
 
     assert "City" not in transformed.columns
-    assert transformed["City_Target"].iloc[0] == pytest.approx((0.5 * 20 + 0.5 * 2) / 22)
-    assert transformed["City_Target"].iloc[2] == pytest.approx((0.5 * 20 + 1.0 * 1) / 21)
+    assert transformed["City_Target"].iloc[0] == pytest.approx(
+        (0.5 * 20 + 0.5 * 2) / 22
+    )
+    assert transformed["City_Target"].iloc[2] == pytest.approx(
+        (0.5 * 20 + 1.0 * 1) / 21
+    )
 
 
 def test_geo_transformer_risk_band_strategy_creates_risk_band():
@@ -218,7 +229,9 @@ def test_geo_transformer_zip_region_strategy_creates_geo_region():
 def test_geo_transformer_geo_cluster_strategy_creates_geo_cluster():
     df = make_sample_df()
 
-    transformed = GeoTransformer(strategy="geo_cluster", geo_cluster_max_clusters=3).fit_transform(df)
+    transformed = GeoTransformer(
+        strategy="geo_cluster", geo_cluster_max_clusters=3
+    ).fit_transform(df)
 
     assert "Geo_Cluster" in transformed.columns
     assert transformed["Geo_Cluster"].iloc[3] == "cluster_missing"

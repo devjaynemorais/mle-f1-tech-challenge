@@ -219,10 +219,10 @@ def train_mlp(X_train, y_train, X_test, y_test, config):
         optimizer,
         criterion,
         DEVICE,
-        MLP_MAX_EPOCHS,
-        MLP_PATIENCE,
-        MLP_THRESHOLD,
-        logger,
+        max_epochs=MLP_MAX_EPOCHS,
+        patience=MLP_PATIENCE,
+        threshold=MLP_THRESHOLD,
+        logger=logger,
     )
 
     _, metrics_train = evaluate(model, train_loader, criterion, DEVICE, MLP_THRESHOLD)

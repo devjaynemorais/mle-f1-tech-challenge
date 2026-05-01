@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from numbers import Integral
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import cross_validate
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+
 from src.features.feature_engineer_transformer import FeatureEngineerTransformer
 from src.features.geo_transformer import GeoTransformer
 from src.utils.exp import MLPClassifierWrapper, require_xgboost
@@ -20,7 +21,9 @@ if TYPE_CHECKING:
     import optuna
 
 
-def suggest_params_from_space(trial: Any, search_space: dict[str, Any]) -> dict[str, Any]:
+def suggest_params_from_space(
+    trial: Any, search_space: dict[str, Any]
+) -> dict[str, Any]:
     """Converte um dicionario de busca reduzido em chamadas suggest_* do Optuna."""
     suggested: dict[str, Any] = {}
 
@@ -37,7 +40,9 @@ def suggest_params_from_space(trial: Any, search_space: dict[str, Any]) -> dict[
         step = spec.get("step")
         log = bool(spec.get("log", False))
 
-        is_int_range = isinstance(low, Integral) and isinstance(high, Integral) and not log
+        is_int_range = (
+            isinstance(low, Integral) and isinstance(high, Integral) and not log
+        )
         is_int_step = step is not None and isinstance(step, Integral)
 
         if is_int_range and (step is None or is_int_step):
@@ -69,7 +74,9 @@ def suggest_params_from_space(trial: Any, search_space: dict[str, Any]) -> dict[
     return suggested
 
 
-def build_mlp_optuna_pipeline(preprocessor: Any, fe_params: dict[str, Any], params: dict[str, Any]) -> Pipeline:
+def build_mlp_optuna_pipeline(
+    preprocessor: Any, fe_params: dict[str, Any], params: dict[str, Any]
+) -> Pipeline:
     """Reconstrói o pipeline da MLP para a etapa de Optuna."""
     return Pipeline(
         [
@@ -146,7 +153,9 @@ def build_xgb_optuna_pipeline(
     )
 
 
-def evaluate_candidate_cv(estimator: Any, X: Any, y: Any, cv: Any, scoring: Any) -> dict[str, float]:
+def evaluate_candidate_cv(
+    estimator: Any, X: Any, y: Any, cv: Any, scoring: Any
+) -> dict[str, float]:
     """Executa CV e devolve o pacote padronizado de métricas."""
     cv_res = cross_validate(
         estimator=estimator,
@@ -217,7 +226,12 @@ def build_convergence_history(
     """Gera histórico de convergência com melhor valor acumulado."""
     if trials_df.empty:
         return pd.DataFrame(
-            columns=["trial_number", "current_pr_auc", "best_pr_auc_so_far", "improved_best"]
+            columns=[
+                "trial_number",
+                "current_pr_auc",
+                "best_pr_auc_so_far",
+                "improved_best",
+            ]
         )
 
     ordered = trials_df.sort_values("trial_number").reset_index(drop=True).copy()
@@ -225,7 +239,9 @@ def build_convergence_history(
     ordered["best_pr_auc_so_far"] = ordered["current_pr_auc"].cummax()
     previous_best = ordered["best_pr_auc_so_far"].shift(1, fill_value=-np.inf)
     ordered["improved_best"] = ordered["current_pr_auc"] > previous_best
-    return ordered[["trial_number", "current_pr_auc", "best_pr_auc_so_far", "improved_best"]]
+    return ordered[
+        ["trial_number", "current_pr_auc", "best_pr_auc_so_far", "improved_best"]
+    ]
 
 
 def should_stop_for_convergence(
@@ -317,11 +333,7 @@ def run_optuna_study(
         .to_dict()
     )
 
-    best_params = {
-        key: value
-        for key, value in best_row.items()
-        if key in search_space
-    }
+    best_params = {key: value for key, value in best_row.items() if key in search_space}
 
     return study, trials_df, convergence_df, best_params, best_row
 
