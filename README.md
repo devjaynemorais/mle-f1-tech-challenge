@@ -6,6 +6,61 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 
 ---
 
+## ⚡ Início Rápido
+
+> Para o fluxo Docker não é necessário Python local — apenas Docker Desktop.
+
+### Ativar o ambiente virtual
+
+Crie e ative o `.venv` uma vez antes de rodar os comandos locais:
+
+```bash
+make env
+```
+
+Depois ative (escolha conforme seu terminal):
+
+| Terminal | Comando |
+|---|---|
+| Git Bash (Windows) | `source .venv/Scripts/activate` |
+| PowerShell (Windows) | `.\.venv\Scripts\Activate.ps1` |
+| Bash / Zsh (Linux/Mac) | `source .venv/bin/activate` |
+
+> **Sem ativar:** todos os `make` já usam `uv run` internamente — funciona de qualquer terminal sem ativação manual.
+
+### Local
+
+```bash
+make lint          # linting com ruff
+make test          # testes com pytest
+make train         # treinar o modelo
+make inference     # avaliar no test set
+make api           # subir a API em http://localhost:8000
+make mlflow        # subir MLflow UI em http://localhost:5000
+```
+
+### Docker Compose (sem Python local)
+
+```bash
+make compose-build      # build da imagem (uma vez)
+make compose-train      # sobe MLflow + executa treino
+make compose-up         # sobe MLflow + API
+make compose-monitoring # sobe Prometheus + Grafana
+make compose-full       # sobe tudo: MLflow + API + Prometheus + Grafana
+make compose-down       # para tudo
+```
+
+### Interfaces disponíveis
+
+| Serviço | URL | Credenciais |
+|---|---|---|
+| API Swagger | http://localhost:8000/docs | — |
+| MLflow UI | http://localhost:5000 | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | admin / admin |
+
+---
+
 ## 🗂 Estrutura do Projeto
 
 ```
@@ -83,7 +138,7 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 
 ## 🚀 Execução
 
-O projeto tem **quatro fluxos independentes:**
+O projeto tem **cinco fluxos independentes:**
 
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
@@ -91,6 +146,7 @@ O projeto tem **quatro fluxos independentes:**
 | 2 | [Treino](#-2-treino) | Treinar o modelo de produção | `uv run python run_train.py` |
 | 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `uv run python run_inference.py` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
+| 5 | [Monitoramento](#-5-monitoramento-prometheus--grafana) | Observar a API em produção | `docker compose up -d` |
 
 ---
 
@@ -362,32 +418,105 @@ docker compose down
 
 ---
 
-## 🔧 Makefile
+## 📊 5. Monitoramento (Prometheus + Grafana)
 
-Atalhos para as operações mais comuns:
+> **Quando usar:** para observar a API em produção — latência, volume de requisições, distribuição das predições e taxa de erros em tempo real.
+>
+> **Pré-requisito:** Docker Desktop instalado e rodando. Nenhuma configuração manual necessária — datasource e dashboard já são provisionados automaticamente.
+
+A API expõe `/metrics` no padrão Prometheus via `prometheus-fastapi-instrumentator`. O Prometheus coleta essas métricas a cada 15 s e o Grafana as visualiza em um dashboard pré-configurado.
+
+### Métricas expostas
+
+| Métrica | Tipo | Descrição |
+|---|---|---|
+| `http_request_duration_seconds` | Histogram | Latência por endpoint — base para P50, P95, P99 |
+| `http_request_duration_seconds_count` | Counter | Total de requisições por endpoint e status HTTP |
+| `churn_predictions_total` | Counter | Total de clientes enviados ao `/predict`, por modelo |
+| `churn_probability` | Histogram | Distribuição das probabilidades retornadas pelo modelo |
+
+### Passo a Passo
+
+**Passo 1 — Build (uma vez, se ainda não fez):**
 
 ```bash
-# Qualidade e testes
-make lint           # ruff check .
-make test           # pytest tests/ -v
+docker compose build
+```
 
-# Fluxo local
-make train          # python run_train.py
-make inference      # python run_inference.py
-make api            # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
-make mlflow         # mlflow server --host 127.0.0.1 --port 5000 --workers 1
+**Passo 2 — Subir a API + Prometheus + Grafana:**
 
-# Equivalentes sem ativar a .venv manualmente
-uv run python run_train.py
-uv run python run_inference.py
-uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
-uv run pytest tests/ -v
+```bash
+docker compose up -d api prometheus grafana
+# ou: make compose-monitoring  (sobe apenas prometheus e grafana, com api já rodando)
+```
 
-# Docker Compose (fluxo completo, sem Python local)
-make compose-build  # docker compose build
-make compose-train  # sobe mlflow + executa treino one-shot
-make compose-up     # sobe mlflow + api
-make compose-down   # docker compose down
+**Passo 3 — Acessar as interfaces:**
+
+| Interface | URL | Credenciais |
+|---|---|---|
+| FastAPI Swagger | http://localhost:8000/docs | — |
+| Métricas brutas (scrape) | http://localhost:8000/metrics | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
+
+**Passo 4 — Abrir o dashboard no Grafana:**
+
+1. Acesse http://localhost:3000 e faça login com `admin` / `admin`
+2. No menu lateral, clique em **Dashboards**
+3. Abra **"Churn API — Monitoramento"** (já aparece provisionado)
+
+> O Grafana detecta automaticamente o datasource Prometheus e carrega o dashboard — nenhuma configuração manual necessária.
+
+**Passo 5 — Gerar dados para o dashboard:**
+
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "records": [{
+      "gender": "Male", "Senior Citizen": "No", "partner": "Yes",
+      "dependents": "No", "Tenure Months": 24, "Phone Service": "Yes",
+      "Multiple Lines": "No", "Internet Service": "Fiber optic",
+      "Online Security": "No", "Online Backup": "No",
+      "Device Protection": "No", "Tech Support": "No",
+      "Streaming TV": "Yes", "Streaming Movies": "Yes",
+      "contract": "Month-to-month", "Paperless Billing": "Yes",
+      "Payment Method": "Electronic check",
+      "Monthly Charges": 85.0, "Total Charges": 2040.0, "CLTV": 3500
+    }]
+  }'
+```
+
+Aguarde ~15 s (intervalo de scrape) e os gráficos atualizam automaticamente.
+
+### Dashboard — painéis disponíveis
+
+| Painel | Métrica | O que mostra |
+|---|---|---|
+| Requisições / segundo | `rate(http_request_duration_seconds_count[1m])` | Volume de tráfego por endpoint |
+| Taxa de erros 5xx | `rate(...{status_code=~"5.."}[1m])` | Falhas internas da API |
+| Latência P50 / P95 / P99 | `histogram_quantile(...)` | Tempos de resposta reais |
+| Predições (última hora) | `increase(churn_predictions_total[1h])` | Volume de clientes classificados |
+| Predições por modelo | `churn_predictions_total by (model)` | Distribuição entre modelos |
+| Distribuição de probabilidade | `churn_probability_bucket` | Concentração de scores de churn |
+
+### Estrutura dos arquivos de monitoramento
+
+```
+monitoring/
+├── prometheus.yml                              # Scrape config — API a cada 15 s
+└── grafana/
+    ├── provisioning/
+    │   ├── datasources/prometheus.yml          # Datasource auto-provisionado no boot
+    │   └── dashboards/dashboards.yml           # Loader de dashboards do disco
+    └── dashboards/
+        └── churn_api.json                      # Dashboard pré-configurado
+```
+
+**Parar o stack de monitoramento:**
+
+```bash
+docker compose down
 ```
 
 ---
