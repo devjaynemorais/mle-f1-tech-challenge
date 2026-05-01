@@ -40,18 +40,30 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 
 ### Pré-requisitos
 
-- Python 3.9 ou superior
+- `uv` instalado localmente
 - Docker (opcional — cobre treino, inferência e API via containers, sem instalar Python localmente)
 
 ### Passo a Passo
 
-1. Crie o ambiente virtual:
+1. Crie o ambiente virtual com `uv`:
 
    ```bash
-   python -m venv .venv
+   uv venv
    ```
 
-2. Ative o ambiente:
+   Se quiser fixar explicitamente um interpretador compatível durante a criação:
+
+   ```bash
+   uv venv --python 3.12 .venv
+   ```
+
+2. Instale as dependências com `uv`:
+
+   ```bash
+   uv sync --extra dev
+   ```
+
+3. (Opcional) Ative o ambiente:
 
    | Sistema | Comando |
    |---|---|
@@ -59,17 +71,12 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
    | Bash (Linux/Mac) | `source .venv/bin/activate` |
    | Git Bash (Windows) | `source .venv/Scripts/activate` |
 
-3. Instale as dependências:
-
-   ```bash
-   pip install --upgrade pip
-   pip install -e ".[dev]"
-   ```
+   Se preferir, você pode evitar a ativação manual e executar tudo com `uv run`.
 
 4. (Opcional) Instale o browser headless para exportação de PDF:
 
    ```bash
-   playwright install chromium
+   uv run playwright install chromium
    ```
 
 ---
@@ -81,8 +88,8 @@ O projeto tem **quatro fluxos independentes:**
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
 | 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | Notebooks Jupyter |
-| 2 | [Treino](#-2-treino) | Treinar o modelo de produção | `python run_train.py` |
-| 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `python run_inference.py` |
+| 2 | [Treino](#-2-treino) | Treinar o modelo de produção | `uv run python run_train.py` |
+| 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `uv run python run_inference.py` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
 
 ---
@@ -96,12 +103,12 @@ O projeto tem **quatro fluxos independentes:**
 ### Execute o Jupyter
 
 ```bash
-jupyter notebook
+uv run jupyter notebook
 ```
 
 > Notebooks com MLflow requerem o servidor em terminal separado:
 > ```bash
-> make mlflow
+> uv run mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db
 > ```
 
 ### Notebooks disponíveis
@@ -128,8 +135,8 @@ jupyter notebook
 O treino escreve diretamente em `mlflow.db` (SQLite local) — nenhum servidor é necessário para rodar. Para visualizar os experimentos no browser:
 
 ```bash
-make mlflow
-# equivalente a: mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db
+uv run mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db
+# ou: make mlflow
 ```
 
 Acesse [http://127.0.0.1:5000](http://127.0.0.1:5000). Pode ser aberto antes ou depois do treino.
@@ -137,8 +144,8 @@ Acesse [http://127.0.0.1:5000](http://127.0.0.1:5000). Pode ser aberto antes ou 
 ### Passo 2 — Execute o treino
 
 ```bash
-python run_train.py
-# ou: make train
+uv run python run_train.py
+# ou: make train (com .venv ativa)
 ```
 
 ### Passos executados em sequência
@@ -189,8 +196,8 @@ O MLP usa **early stopping** — o treino para automaticamente quando a val_loss
 ### Execute
 
 ```bash
-python run_inference.py
-# ou: make inference
+uv run python run_inference.py
+# ou: make inference (com .venv ativa)
 ```
 
 ### Saída esperada (modelo atual: MLP)
@@ -217,8 +224,8 @@ Para trocar o modelo de produção, altere `model.name` e `model_path` em `confi
 ### Subir a API localmente
 
 ```bash
-make api
-# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+# ou: make api
 ```
 
 Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
@@ -364,11 +371,17 @@ Atalhos para as operações mais comuns:
 make lint           # ruff check .
 make test           # pytest tests/ -v
 
-# Fluxo local (requer .venv ativo)
+# Fluxo local
 make train          # python run_train.py
 make inference      # python run_inference.py
 make api            # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 make mlflow         # mlflow server --host 127.0.0.1 --port 5000 --workers 1
+
+# Equivalentes sem ativar a .venv manualmente
+uv run python run_train.py
+uv run python run_inference.py
+uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+uv run pytest tests/ -v
 
 # Docker Compose (fluxo completo, sem Python local)
 make compose-build  # docker compose build
@@ -383,7 +396,7 @@ make compose-down   # docker compose down
 
 ```bash
 make test
-# ou: pytest tests/ -v
+# ou: uv run pytest tests/ -v
 ```
 
 | Arquivo | O que testa |
@@ -444,7 +457,7 @@ python docs/export_pdf.py
 
 ### Venv não ativado
 
-`run_train.py` e `run_inference.py` detectam se o venv está ativo e exibem uma mensagem clara com o comando correto antes de falhar.
+`run_train.py` e `run_inference.py` detectam se o venv está ativo e exibem uma mensagem clara com o comando correto antes de falhar. Se preferir evitar esse passo, execute os scripts com `uv run`.
 
 ### UnicodeEncodeError no Windows (MLflow emoji)
 
@@ -452,10 +465,10 @@ Os scripts de treino já incluem o fix automático de encoding UTF-8. Se o erro 
 
 ```bash
 # Git Bash / Bash
-PYTHONIOENCODING=utf-8 python run_train.py
+PYTHONIOENCODING=utf-8 uv run python run_train.py
 
 # PowerShell
-$env:PYTHONIOENCODING='utf-8'; python run_train.py
+$env:PYTHONIOENCODING='utf-8'; uv run python run_train.py
 ```
 
 ---
@@ -464,4 +477,4 @@ $env:PYTHONIOENCODING='utf-8'; python run_train.py
 
 - **Dataset:** Telco Customer Churn — IBM (`data/raw/Telco_customer_churn.xlsx`)
 - **Tamanho:** 7.043 registros, 20 features (16 categóricas + 4 numéricas)
-- Os dados processados são gerados automaticamente ao executar `python run_train.py`.
+- Os dados processados são gerados automaticamente ao executar `uv run python run_train.py`.

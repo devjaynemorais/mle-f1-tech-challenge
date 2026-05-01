@@ -12,11 +12,9 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import cross_validate
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from xgboost import XGBClassifier
-
 from src.features.feature_engineer_transformer import FeatureEngineerTransformer
 from src.features.geo_transformer import GeoTransformer
-from src.utils.exp import MLPClassifierWrapper
+from src.utils.exp import MLPClassifierWrapper, require_xgboost
 
 if TYPE_CHECKING:
     import optuna
@@ -116,6 +114,7 @@ def build_xgb_optuna_pipeline(
     y_reference: Any,
 ) -> Pipeline:
     """Reconstrói o pipeline do XGBoost para a etapa de Optuna."""
+    xgb_classifier = require_xgboost()
     y_arr = np.asarray(y_reference)
     scale_pos_weight = float((y_arr == 0).sum()) / max(float((y_arr == 1).sum()), 1.0)
 
@@ -126,7 +125,7 @@ def build_xgb_optuna_pipeline(
             ("prep", preprocessor),
             (
                 "model",
-                XGBClassifier(
+                xgb_classifier(
                     objective="binary:logistic",
                     eval_metric="logloss",
                     random_state=42,

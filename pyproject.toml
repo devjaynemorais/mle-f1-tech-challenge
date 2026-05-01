@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "mle-f1-tech-challenge"
 version = "0.1.0"
 description = "Telecommunications Customer Churn Prediction Pipeline"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0.0",
     "scikit-learn>=1.2.0",
@@ -23,6 +23,7 @@ dependencies = [
     "uvicorn[standard]>=0.23.0",
     "pandera>=0.17.0",
     "httpx>=0.24.0",
+    "xgboost>=3.0.0",
 ]
 
 [project.optional-dependencies]

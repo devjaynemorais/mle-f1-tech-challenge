@@ -21,13 +21,27 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from torch.utils.data import DataLoader, TensorDataset
-from xgboost import XGBClassifier
+
+try:
+    from xgboost import XGBClassifier
+except ModuleNotFoundError:  # pragma: no cover - exercised when dependency is absent locally
+    XGBClassifier = None
 
 from src.features.feature_engineer_transformer import FeatureEngineerTransformer
 from src.features.geo_transformer import GeoTransformer
 from src.models.mlp import CityEmbeddingMLP, DEFAULT_DEVICE, MLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")
+
+
+def require_xgboost():
+    """Retorna XGBClassifier ou falha com mensagem orientativa."""
+    if XGBClassifier is None:
+        raise ModuleNotFoundError(
+            "xgboost nao esta instalado no ambiente atual. "
+            "Rode `uv sync --extra dev` apos adicionar a dependencia ao projeto."
+        )
+    return XGBClassifier
 
 
 def rows(X: Any, idx: Sequence[int]) -> Any:
@@ -394,6 +408,7 @@ def build_round3_estimator(
         )
 
     if model_name == "XGBoost":
+        xgb_classifier = require_xgboost()
         return Pipeline(
             [
                 ("fe", feature_engineer),
@@ -405,7 +420,7 @@ def build_round3_estimator(
                     ),
                 ),
                 ("prep", preprocessor),
-                ("model", XGBClassifier(**xgb_defaults)),
+                ("model", xgb_classifier(**xgb_defaults)),
             ]
         )
 
