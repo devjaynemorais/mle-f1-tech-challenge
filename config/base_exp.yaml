@@ -93,4 +93,4 @@ validation:
 
 mlflow:
   experiment_name: churn_exp
-  tracking_uri: http://localhost:5000
+  tracking_uri: http://127.0.0.1:5000
