@@ -1,8 +1,11 @@
-.PHONY: env lint test train inference api mlflow \
+.PHONY: env lint test setup train inference api mlflow \
         compose-build compose-up compose-train compose-down compose-monitoring compose-full
 
 env:
 	uv sync --extra dev
+
+setup:
+	uv run python run_setup.py
 
 lint:
 	uv run ruff check .
