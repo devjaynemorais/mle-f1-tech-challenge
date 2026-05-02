@@ -1,135 +1,319 @@
-# Model Card - Churn Prediction MLP
+# Model Card - Churn Prediction MLP Optuna
 
-## Descrição do Modelo
+## Descricao do Modelo
 
-**Nome:** MLP (Multilayer Perceptron) para Predição de Churn  
-**Versão:** 1.0.0  
-**Tipo:** Classificação binária (churn = 1 / não-churn = 0)  
-**Framework:** PyTorch + Scikit-Learn (pré-processamento)  
-**Arquitetura:** Linear(input -> 64) -> ReLU -> Linear(64 -> 1) + BCEWithLogitsLoss
+**Nome:** MLP Optuna para Predicao de Churn  
+**Versao:** 1.1.0  
+**Tipo:** Classificacao binaria (`churn = 1` / `nao churn = 0`)  
+**Framework:** PyTorch + Scikit-Learn + MLflow  
+**Status:** Candidato a producao serializado no MLflow  
+**Model URI:** `runs:/71b3084f4c444df4a2470992a83cbe92/model`
+
+O modelo final foi consolidado no notebook [03_modelo_mvp.ipynb](/C:/Users/jooar/ds/portfolio/mle-f1-tech-challenge-fiap/notebooks/03_modelo_mvp.ipynb), com serializacao registrada no experimento `tc-f1-nb03-MLP-production-performance`.
 
 ---
 
 ## Uso Pretendido
 
-**Primário:** Identificar clientes de telecom com risco de cancelamento, permitindo ações proativas de retenção.
+**Objetivo primario:** identificar clientes de telecom com risco elevado de cancelamento para priorizacao de campanhas de retencao.
 
-**Usuários previstos:** Times de CRM, Marketing e Sucesso do Cliente.
+**Usuarios previstos:**
+- Times de CRM
+- Marketing
+- Sucesso do Cliente
+- Operacao de retencao
 
 **Casos fora do escopo:**
-- Predição de churn em outros setores (bancário, varejo, etc.) sem retreinamento
-- Decisões automatizadas sem revisão humana de alto impacto (bloqueio de conta, cobrança)
+- Predicao de churn em outros setores sem retreinamento
+- Decisoes automatizadas de alto impacto sem supervisao humana
+- Uso como unico criterio para negar servico, credito ou beneficios
 
 ---
 
-## Métricas de Performance
+## Dados e Features
 
-Avaliadas no conjunto de teste (30% dos dados, estratificado):
+**Dataset:** Telco Customer Churn - IBM (`data/raw/Telco_customer_churn.xlsx`)  
+**Base tratada:** `data/interim/telecom_clean.csv`  
+**Tamanho total:** 7.043 registros  
+**Classe positiva:** aproximadamente 26% de churners  
+**Holdout:** split fixado e reconstruido a partir dos artefatos logados no MLflow
 
-| Métrica | Valor |
-|---|---|
-| Recall | 0.7968 |
-| Precision | 0.5422 |
-| F1-Score | 0.6477 |
-| AUC-ROC | 0.8519 |
-| Overfitting (recall) | 3.2% |
+O pipeline final usa:
+- engenharia de atributos da rodada final (`round 4`)
+- `GeoTransformer(strategy="drop")`
+- `ColumnTransformer` com `OneHotEncoder` para categoricas
+- `SelectKBest(f_classif)` para selecao supervisionada de atributos
+- `StandardScaler(with_mean=False)`
+- wrapper `MLPClassifierWrapper`
 
-**Early stopping:** treinamento encerrado automaticamente ao detectar ausência de melhora na `val_loss` (`patience=10`).
+**Quantidade final de features selecionadas:** `44`
+
+Entre os atributos finais selecionados, destacam-se:
+- `Senior Citizen`
+- `Partner`
+- `Dependents`
+- `Contract`
+- `Tenure Months`
+- `Monthly Charges`
+- `Total Charges`
+- `service_score`
+- `Support_Gap_Count`
+- `Price_Pressure_Ratio`
+
+O atributo `Gender` nao foi mantido no pipeline final. Durante a EDA e a selecao de variaveis, ele mostrou baixa variabilidade explicativa e baixo poder preditivo relativo para churn.
 
 ---
 
-## Ablação Econômica
+## Arquitetura e Hiperparametros
 
-Durante a etapa de consolidação do notebook 03, foi testada uma ablação econômica com ponderação do treino por `CLTV` via `sample_weight`, com o objetivo de aproximar o objetivo estatístico do objetivo financeiro da campanha de retenção.
+### Modelo final selecionado pelo Optuna
 
-O teste foi conduzido no mesmo protocolo de desenvolvimento usado para a comparação técnica, utilizando probabilidades `OOF` e comparando dois cenários:
+- `selector__k = 44`
+- `model__activation = tanh`
+- `model__hidden_dim = 54`
+- `model__dropout = 0.3`
+- `model__lr = 0.000718278415521642`
+- `model__weight_decay = 0.0`
+- `model__batch_size = 128`
 
-- `p` puro, sem ponderação por `CLTV`
+### Parametros fixos do wrapper no pipeline final
+
+- `max_epochs = 80`
+- `patience = 16`
+- `min_delta = 1e-3`
+- `val_size = 0.15`
+- `random_state = 42`
+- `threshold de producao = 0.35`
+
+### Criterio economico adotado no notebook 03
+
+- `activation_cost = BRL 50`
+- `retention_rate = 0.10`
+
+O threshold de producao nao permaneceu em `0.5`. Ele foi explicitamente redefinido para `0.35` na etapa final de serializacao para refletir a politica de decisao escolhida para rollout.
+
+---
+
+## Performance do Modelo
+
+### Desenvolvimento (cross-validation / OOF)
+
+Melhor configuracao da `MLP Optuna` no processo de tuning:
+
+| Metrica | Valor |
+|---|---:|
+| PR-AUC media | 0.9401 |
+| ROC-AUC media | 0.9763 |
+| Recall medio | 0.9273 |
+| Precision media | 0.7803 |
+| F1 medio | 0.8469 |
+| Fit time medio (s) | 2.6048 |
+| Score time medio (s) | 0.0285 |
+
+### Validacao final e producao
+
+O candidato de producao foi:
+- refitado em todo o `train_val`
+- avaliado em `X_test`
+- serializado no MLflow com `threshold = 0.35`
+
+As metricas finais de holdout e os artefatos associados foram registradas no MLflow na run de serializacao do modelo e nas runs de `holdout_evaluation`, `shap` e `fairness` do experimento `tc-f1-nb03-MLP-production-performance`.
+
+---
+
+## Logica Economica
+
+Durante a consolidacao do notebook 03, a avaliacao economica foi reformulada para usar **custo por acionamento** em vez de custo total fixo de campanha.
+
+Premissas utilizadas:
+- `activation_cost = BRL 50`
+- `retention_rate = 10%`
+
+Principais componentes:
+- `VR`: valor em risco
+- `Vrec`: valor recuperado
+- `VP`: perda por omissao
+- `VD`: desperdicio com falsos positivos
+- `IEL`: impacto economico liquido
+- `ROI`: retorno sobre o custo total de acionamento
+
+Essa mudanca foi importante para evitar que thresholds artificialmente muito baixos parecessem otimos apenas por diluicao de custo fixo.
+
+---
+
+## Ablacao Economica
+
+Foi testada uma ablacao economica com ponderacao do treino por `CLTV` via `sample_weight`, com o objetivo de aproximar o objetivo estatistico do objetivo financeiro da campanha.
+
+Cenarios comparados:
+- `p` puro, sem ponderacao por `CLTV`
 - `p` ponderado por `CLTV` no treino
 
-Embora a hipótese fosse conceitualmente promissora, a ponderação não foi suficiente para produzir melhora consistente no cenário testado. Para a `MLP Optuna`, que permaneceu como modelo de referência para o MVP, o cenário ponderado reduziu os indicadores econômicos principais em relação ao cenário puro.
+Para a `MLP Optuna`, o cenario ponderado nao trouxe ganho suficiente no contexto testado e reduziu os indicadores economicos principais em relacao ao cenario puro.
 
-No cenário sem ponderação, a `MLP Optuna` apresentou:
-
+No cenario sem ponderacao, a `MLP Optuna` apresentou:
 - `IEL = 329343.52`
 - `ROI = 2.52`
 
-No cenário com `sample_weight=CLTV`, a `MLP Optuna` passou a apresentar:
-
+No cenario com `sample_weight = CLTV`, a `MLP Optuna` apresentou:
 - `IEL = 316294.62`
 - `ROI = 2.39`
 
-A leitura dominante foi de piora por aumento do custo de omissão. Houve leve melhora operacional em falsos positivos e desperdício de campanha, mas esse ganho não compensou o aumento de falsos negativos economicamente relevantes.
+Conclusao metodologica:
 
-Como conclusão metodológica:
+> A ponderacao do treino por `CLTV` foi testada como aproximacao entre objetivo estatistico e objetivo economico, mas nao trouxe ganho para a `MLP Optuna`, elevando o custo de omissao (`VP`) e reduzindo o retorno final da estrategia.
 
-> A ponderação do treino por `CLTV` foi testada como aproximação entre objetivo estatístico e objetivo econômico, mas não trouxe ganho para a `MLP Optuna`, elevando o custo de omissão (`VP`) e reduzindo o retorno final da estratégia.
-
-Por isso, o modelo candidato ao MVP foi mantido com o cenário `p` puro como referência principal, e o teste ponderado passou a ser tratado como ablação econômica documentada, não como configuração final de treinamento.
+Por isso, o candidato ao MVP foi mantido com treinamento sem ponderacao por `CLTV`, e o teste ponderado passou a ser tratado como ablacao economica documentada.
 
 ---
 
-## Dados de Treinamento
+## Fairness, Limitacoes e Vieses Conhecidos
 
-**Dataset:** Telco Customer Churn - IBM (`data/raw/Telco_customer_churn.xlsx`)  
-**Tamanho:** 7.043 registros  
-**Features:** 20 variáveis (16 categóricas + 4 numéricas)  
-**Período:** Dados históricos de clientes de uma operadora de telecom dos EUA  
-**Balanceamento:** ~26% de churners - classe positiva ponderada com `pos_weight` no treinamento
+### Escopo da analise
+
+A analise de fairness foi executada no `holdout`, com comparacao por grupos em:
+- `Senior Citizen`
+- `Partner`
+- `Dependents`
+- `Contract`
+
+Tambem foi feita comparacao auxiliar com `threshold = 0.5`, e os desalinhamentos observados permaneceram de forma semelhante. Isso sugere que os gaps nao foram criados apenas pela escolha do threshold final.
+
+### Principais achados
+
+#### 1. Gender
+
+- `Gender` nao foi selecionado entre as features finais.
+- Na EDA e na analise de IV, a variavel mostrou baixa relevancia preditiva.
+- Isso reduz dependencia explicita de um atributo sensivel no pipeline final.
+
+**Importante:** a ausencia de `Gender` no modelo nao garante ausencia de vies. O modelo ainda pode reproduzir efeitos indiretos por proxies ou por combinacoes de outras variaveis.
+
+#### 2. Senior Citizen
+
+No threshold final analisado no holdout, os gaps por `Senior Citizen` foram moderados:
+- `demographic_parity_difference = 0.2034`
+- `equalized_odds_difference = 0.0520`
+- `equalized_odds_ratio = 0.7061`
+
+Leitura:
+- houve diferenca de exposicao a campanha entre grupos
+- o gap de `recall` foi relativamente pequeno
+- nao surgiu evidencia forte o suficiente para exigir mitigacao imediata
+
+**Tratamento recomendado:** monitoramento recorrente em producao.
+
+#### 3. Partner
+
+Resultados observados:
+- `demographic_parity_difference = 0.2059`
+- `equalized_odds_difference = 0.1131`
+- `equalized_odds_ratio = 0.4100`
+
+Leitura:
+- ha diferenca relevante de `selection_rate` e `FPR`
+- o `F1` por grupo permaneceu parecido
+
+**Interpretacao recomendada:** alerta secundario de desempenho por subgrupo, mais proximo de segmentacao operacional do que de fairness regulatoria prioritaria.
+
+#### 4. Dependents
+
+Esse foi o ponto mais sensivel da analise:
+- `demographic_parity_difference = 0.3296`
+- `equalized_odds_difference = 0.2127`
+- `equalized_odds_ratio = 0.2415`
+
+Leitura:
+- o grupo `Dependents = Yes` apresentou recall inferior
+- a taxa de falsos negativos foi materialmente maior nesse grupo
+- isso implica maior risco de deixar escapar churners desse segmento
+
+**Interpretacao:** este e o principal vies operacional observado no modelo atual.  
+**Decisao para o MVP:** documentar como limitacao conhecida e abrir investigacao futura, sem mitigacao imediata nesta entrega.
+
+#### 5. Contract
+
+Resultados observados:
+- `demographic_parity_difference = 0.5221`
+- `equalized_odds_difference = 0.3051`
+- `equalized_odds_ratio = 0.0732`
+
+Leitura:
+- os gaps sao muito altos entre `Month-to-month`, `One year` e `Two year`
+- o desempenho e bastante heterogeneo por regime contratual
+
+**Interpretacao correta:** isso deve ser tratado principalmente como heterogeneidade de performance por segmento de negocio, nao como fairness sensivel classica.
+
+### Limitacoes de fairness
+
+1. **Nao houve mitigacao fairness-aware nesta entrega.**  
+   O modelo foi levado para serializacao e rollout com documentacao dos gaps, mas sem ajuste por threshold por grupo, reranking ou tecnicas fairness-aware.
+
+2. **A principal limitacao operacional esta em `Dependents`.**  
+   O grupo `Yes` ficou mais exposto a falsos negativos no holdout.
+
+3. **`Contract` mostrou forte heterogeneidade de performance.**  
+   Mesmo nao sendo atributo sensivel classico, isso pode levar a respostas desbalanceadas da campanha por perfil contratual.
+
+4. **`Senior Citizen` exige monitoramento continuo.**  
+   O gap observado nao justificou mitigacao imediata, mas tambem nao deve ser ignorado.
+
+5. **O threshold final foi otimizado para criterio economico.**  
+   Isso alinha melhor a politica de campanha ao negocio, mas pode deslocar trade-offs de selecao entre grupos.
+
+### Recomendacao futura
+
+As proximas iteracoes podem investigar:
+- fairness-aware post-processing
+- reranking por valor esperado com restricoes de fairness
+- thresholds por grupo apenas em ambiente experimental
+- revisao de proxies e engenharia de atributos
+- metricas economicas por subgrupo em producao
 
 ---
 
-## Limitações
+## Cenarios de Falha
 
-1. **Distribuição geográfica:** o dataset representa clientes de uma única operadora americana. Pode não generalizar para outros mercados sem retreinamento.
-2. **Deriva temporal:** o modelo não é atualizado automaticamente. Se o comportamento de churn mudar ao longo do tempo, a performance pode degradar.
-3. **Variáveis ausentes:** não inclui histórico de interações com suporte, NPS ou dados de uso detalhados, que poderiam melhorar a predição.
-4. **Threshold fixo:** o threshold de `0.5` não foi otimizado para o custo de negócio. Dependendo do custo de falsos negativos vs. falsos positivos, pode ser necessário ajustá-lo.
-5. **CLTV como feature:** o `CLTV` é usado como feature de entrada, mas é em si uma estimativa. Erros no `CLTV` se propagam para a predição.
-
----
-
-## Vieses Conhecidos
-
-- **Gênero:** o modelo inclui `Gender` como feature. Testes de fairness não foram conduzidos formalmente. Recomenda-se avaliar paridade de performance entre grupos demográficos antes de uso em decisões de alto impacto.
-- **Contrato:** clientes `Month-to-month` têm taxa de churn muito maior. O modelo pode superestimar risco para novos clientes nessa modalidade sem histórico suficiente.
-- **Senior Citizen:** grupo minoritário no dataset; a performance pode ser menor neste segmento.
-
----
-
-## Cenários de Falha
-
-| Cenário | Efeito | Mitigação |
+| Cenario | Efeito | Mitigacao recomendada |
 |---|---|---|
-| Features com valores nulos na entrada | Erro na predição ou resultado incorreto | Validação Pydantic na API rejeita campos ausentes |
-| Modelo desatualizado com deriva de dados | Queda de recall | Monitorar AUC mensal; retreinar se degradar >5% |
-| Feature de entrada fora da distribuição de treino | Predição não confiável | Adicionar detecção de outliers no preprocessamento |
-| Scaler não compatível com novo modelo | Erro de shape ou escala errada | Scaler é salvo e versionado junto com o modelo |
+| Dados de entrada com schema incorreto | erro de predicao ou inferencia inconsistente | validar schema antes da inferencia |
+| Drift de distribuicao | queda de recall, precision e ROI | monitorar PSI e retreinar quando necessario |
+| CLTV fora da distribuicao esperada | degradacao da leitura economica | revisar limites e validacao do CLTV em producao |
+| Heterogeneidade por grupo | comportamento desigual por segmento | monitorar fairness e metricas por subgrupo |
+| Desserializacao em ambiente nao confiavel | risco de execucao arbitraria com `cloudpickle` | carregar o modelo apenas em ambiente controlado; avaliar `skops` futuramente |
 
 ---
 
 ## Plano de Monitoramento
 
-### Métricas a monitorar
+### Metricas recomendadas
 
-| Métrica | Frequência | Alerta |
+| Metrica | Frequencia | Acao sugerida |
 |---|---|---|
-| AUC-ROC no conjunto de validação | Semanal | Degradação > 5% em relação ao baseline |
-| Taxa de churn real vs. prevista | Mensal | Desvio > 10 pontos percentuais |
-| Distribuição das features de entrada | Mensal | PSI > 0.2 em qualquer feature |
-| Taxa de erro da API (`5xx`) | Contínuo | > 1% das requisições |
-| Latência da API (`/predict`) | Contínuo | P95 > 500ms |
+| PR-AUC / ROC-AUC | semanal ou quinzenal | investigar degradacao persistente |
+| Recall | semanal | revisar threshold ou drift se houver queda material |
+| ROI / IEL | por campanha | recalibrar politica de acionamento se houver perda de retorno |
+| Selection rate por grupo | mensal | comparar com baseline de rollout |
+| FNR por `Dependents` | mensal | prioridade alta de monitoramento |
+| Equalized odds por `Senior Citizen` | mensal | manter acompanhamento |
+| PSI das principais features | mensal | acionar retreinamento se drift for relevante |
 
-### Playbook de resposta
+### Playbook resumido
 
-1. **Degradação de AUC > 5%:** inspecionar distribuição de features, verificar deriva -> retreinar se confirmado
-2. **Erro 5xx > 1%:** verificar logs de `src/api/main.py`, checar se o modelo existe em `models/`
-3. **Latência alta:** verificar tamanho do batch enviado, avaliar escalabilidade horizontal
+1. Validar drift de entrada.
+2. Comparar metricas tecnicas e economicas com a run baseline de producao.
+3. Revisar fairness por `Dependents`, `Senior Citizen` e `Contract`.
+4. Reavaliar threshold se o padrao de churn ou o custo de acionamento mudar.
 
 ---
 
-## Informações Técnicas
+## Informacoes Tecnicas
 
-- **Repositório:** POS MLE - Tech Challenge Fase 1
-- **Última atualização do modelo:** 2026-04-25
-- **Contato:** devmoraislacerda@gmail.com
+- **Repositorio:** POS MLE - Tech Challenge Fase 1
+- **Notebook de consolidacao:** [03_modelo_mvp.ipynb](/C:/Users/jooar/ds/portfolio/mle-f1-tech-challenge-fiap/notebooks/03_modelo_mvp.ipynb)
+- **Run upstream do Optuna MLP:** `3132d9b960c947afa75163c1ca0679b8`
+- **Run de serializacao para producao:** `71b3084f4c444df4a2470992a83cbe92`
+- **Formato de serializacao:** `mlflow.sklearn` com `cloudpickle`
+- **Threshold de producao:** `0.35`
+- **Ultima atualizacao:** `2026-05-02`
+- **Contato:** `devmoraislacerda@gmail.com`
