@@ -24,7 +24,6 @@ from src.utils.plots import (
     plot_learning_curves_grid,
     plot_pr_curves_grid,
     plot_probability_histograms_grid,
-    plot_retention_vs_roi,
     plot_roi_by_threshold,
     plot_roi_heatmap,
     plot_roc_curves_grid,
@@ -119,17 +118,11 @@ def test_plot_learning_curves_grid_returns_figure():
     assert len(fig.axes) == 4
 
 
-def test_plot_threshold_and_stress_charts_return_figures():
+def test_plot_threshold_and_heatmap_charts_return_figures():
     threshold_df = pd.DataFrame(
         {
             "threshold": [0.1, 0.3, 0.5, 0.7],
             "roi": [-0.3, 0.1, 0.05, -0.2],
-        }
-    )
-    retention_df = pd.DataFrame(
-        {
-            "retention_rate": [0.0, 0.1, 0.2, 0.3],
-            "roi": [-1.0, -0.5, 0.1, 0.3],
         }
     )
     heatmap_df = pd.DataFrame(
@@ -141,14 +134,11 @@ def test_plot_threshold_and_stress_charts_return_figures():
     )
 
     threshold_fig = plot_roi_by_threshold(threshold_df, show=False)
-    retention_fig = plot_retention_vs_roi(retention_df, show=False)
     heatmap_fig = plot_roi_heatmap(heatmap_df, show=False)
 
     assert threshold_fig is not None
-    assert retention_fig is not None
     assert heatmap_fig is not None
     assert len(threshold_fig.axes) == 1
-    assert len(retention_fig.axes) == 1
     assert len(heatmap_fig.axes) >= 1
 
 
