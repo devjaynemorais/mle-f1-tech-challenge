@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.datasets import make_classification
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
@@ -15,10 +16,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.utils.exp import (
     artifact_uri_to_local_path,
     build_cross_validate_comparison_table,
+    build_default_preprocessor,
+    build_campaign_retention_roi_grid,
+    build_fairness_report_for_feature,
+    build_retention_roi_table,
     calculate_expected_calibration_error,
     compute_campaign_economics,
+    compute_holdout_technical_metrics,
     compute_generalization_gap_pct,
+    extract_selected_feature_names,
+    fit_final_estimator_and_generate_predictions,
     generate_oof_predictions,
+    optimize_threshold_for_roi,
     rebuild_train_val_test_splits,
 )
 
@@ -84,7 +93,7 @@ def test_compute_campaign_economics_returns_expected_components():
         y_prob=y_prob,
         cltv=cltv,
         threshold=0.5,
-        campaign_cost=1000.0,
+        activation_cost=50.0,
         retention_rate=0.10,
     )
 
@@ -95,10 +104,11 @@ def test_compute_campaign_economics_returns_expected_components():
     assert metrics["vr"] == pytest.approx(90.0)
     assert metrics["vrec"] == pytest.approx(9.0)
     assert metrics["vp"] == pytest.approx(40.0)
-    assert metrics["cmca"] == pytest.approx(500.0)
-    assert metrics["vd"] == pytest.approx(500.0)
-    assert metrics["iel"] == pytest.approx(-531.0)
-    assert metrics["roi"] == pytest.approx(-1.031)
+    assert metrics["cmca"] == pytest.approx(50.0)
+    assert metrics["total_campaign_cost"] == pytest.approx(100.0)
+    assert metrics["vd"] == pytest.approx(50.0)
+    assert metrics["iel"] == pytest.approx(-131.0)
+    assert metrics["roi"] == pytest.approx(-1.31)
 
 
 def test_generate_oof_predictions_returns_one_probability_per_row():
@@ -180,3 +190,159 @@ def test_build_cross_validate_comparison_table_returns_expected_columns():
         "score_time(mean)",
     ]
     assert len(comparison_df) == 2
+
+
+def test_optimize_threshold_for_roi_returns_best_threshold_and_metrics():
+    y_true = np.array([1, 1, 0, 0], dtype=int)
+    y_prob = np.array([0.9, 0.4, 0.6, 0.1], dtype=float)
+    cltv = np.array([100.0, 200.0, 150.0, 50.0], dtype=float)
+
+    threshold_df, best_row = optimize_threshold_for_roi(
+        y_true=y_true,
+        y_prob=y_prob,
+        cltv=cltv,
+        threshold_grid=np.array([0.3, 0.5, 0.7]),
+        activation_cost=50.0,
+        retention_rate=0.1,
+    )
+
+    assert threshold_df.shape[0] == 3
+    assert "roi" in threshold_df.columns
+    assert best_row["threshold"] == pytest.approx(0.3)
+    assert best_row["roi"] == pytest.approx(threshold_df["roi"].max())
+
+
+def test_build_retention_roi_table_varies_retention_with_fixed_campaign_cost():
+    y_true = np.array([1, 1, 0, 0], dtype=int)
+    y_prob = np.array([0.9, 0.4, 0.6, 0.1], dtype=float)
+    cltv = np.array([100.0, 200.0, 150.0, 50.0], dtype=float)
+
+    retention_df = build_retention_roi_table(
+        y_true=y_true,
+        y_prob=y_prob,
+        cltv=cltv,
+        threshold=0.3,
+        activation_cost=50.0,
+        retention_values=[0.0, 0.5, 1.0],
+    )
+
+    assert retention_df["retention_rate"].tolist() == [0.0, 0.5, 1.0]
+    assert retention_df["activation_cost"].nunique() == 1
+    assert retention_df["total_campaign_cost"].nunique() == 1
+    assert retention_df["vrec"].iloc[0] == pytest.approx(0.0)
+    assert retention_df["roi"].iloc[-1] > retention_df["roi"].iloc[0]
+
+
+def test_build_campaign_retention_roi_grid_builds_cartesian_product():
+    y_true = np.array([1, 1, 0, 0], dtype=int)
+    y_prob = np.array([0.9, 0.4, 0.6, 0.1], dtype=float)
+    cltv = np.array([100.0, 200.0, 150.0, 50.0], dtype=float)
+
+    grid_df = build_campaign_retention_roi_grid(
+        y_true=y_true,
+        y_prob=y_prob,
+        cltv=cltv,
+        threshold=0.3,
+        activation_cost_values=[25.0, 50.0],
+        retention_values=[0.1, 0.2, 0.3],
+    )
+
+    assert len(grid_df) == 6
+    assert sorted(grid_df["activation_cost"].unique().tolist()) == [25.0, 50.0]
+    assert sorted(grid_df["retention_rate"].unique().tolist()) == [0.1, 0.2, 0.3]
+
+
+def test_fit_final_estimator_and_generate_predictions_returns_holdout_frame():
+    X_arr, y_arr = make_classification(
+        n_samples=40,
+        n_features=6,
+        n_informative=4,
+        n_redundant=0,
+        weights=[0.6, 0.4],
+        random_state=42,
+    )
+    X = pd.DataFrame(X_arr, columns=[f"f{i}" for i in range(X_arr.shape[1])])
+    y = pd.Series(y_arr)
+
+    estimator = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("model", LogisticRegression(max_iter=200)),
+        ]
+    )
+
+    fitted_estimator, holdout_df = fit_final_estimator_and_generate_predictions(
+        estimator=estimator,
+        X_train=X.iloc[:30],
+        y_train=y.iloc[:30],
+        X_test=X.iloc[30:],
+        y_test=y.iloc[30:],
+        threshold=0.4,
+        model_name="LogisticRegression",
+    )
+
+    assert fitted_estimator is not None
+    assert len(holdout_df) == 10
+    assert set(["row_index", "y_true", "proba", "y_pred", "threshold", "model"]).issubset(
+        holdout_df.columns
+    )
+    assert holdout_df["proba"].between(0, 1).all()
+
+
+def test_compute_holdout_technical_metrics_returns_expected_keys():
+    y_true = np.array([0, 0, 1, 1], dtype=int)
+    y_prob = np.array([0.1, 0.3, 0.8, 0.9], dtype=float)
+
+    metrics = compute_holdout_technical_metrics(
+        y_true=y_true,
+        y_prob=y_prob,
+        threshold=0.5,
+    )
+
+    assert set(["pr_auc", "roc_auc", "recall", "precision", "f1_score"]).issubset(metrics.keys())
+    assert metrics["recall"] == pytest.approx(1.0)
+    assert metrics["precision"] == pytest.approx(1.0)
+
+
+def test_extract_selected_feature_names_returns_selected_columns():
+    X = pd.DataFrame(
+        {
+            "cat": ["a", "b", "a", "b", "a", "b"],
+            "num1": [1, 2, 3, 4, 5, 6],
+            "num2": [6, 5, 4, 3, 2, 1],
+        }
+    )
+    y = pd.Series([0, 1, 0, 1, 0, 1])
+
+    estimator = Pipeline(
+        [
+            ("prep", build_default_preprocessor()),
+            ("selector", SelectKBest(score_func=f_classif, k=2)),
+            ("model", LogisticRegression(max_iter=200)),
+        ]
+    )
+    estimator.fit(X, y)
+
+    selected = extract_selected_feature_names(estimator, X)
+
+    assert len(selected) == 2
+    assert all(isinstance(name, str) for name in selected)
+
+
+def test_build_fairness_report_for_feature_returns_group_and_summary_tables():
+    X_feature = pd.Series(["A", "A", "B", "B", "A", "B"], name="Contract")
+    y_true = pd.Series([1, 0, 1, 0, 1, 0])
+    y_pred = pd.Series([1, 1, 1, 0, 0, 0])
+
+    report = build_fairness_report_for_feature(
+        y_true=y_true,
+        y_pred=y_pred,
+        sensitive_feature=X_feature,
+        feature_name="Contract",
+    )
+
+    assert report["feature_name"] == "Contract"
+    assert {"selection_rate", "recall", "precision", "f1_score", "fpr", "fnr"}.issubset(
+        report["by_group"].columns
+    )
+    assert {"metric", "difference", "ratio"}.issubset(report["summary"].columns)

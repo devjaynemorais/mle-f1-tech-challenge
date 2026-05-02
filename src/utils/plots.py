@@ -436,3 +436,239 @@ def plot_probability_histograms_grid(
     _hide_unused_axes(axes, len(oof_predictions))
     fig.suptitle("Histograma de Probabilidades por Modelo", fontsize=14, fontweight="bold")
     return _finalize_figure(fig, show)
+
+
+def plot_roi_by_threshold(
+    threshold_df: pd.DataFrame,
+    *,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota a curva de ROI por threshold."""
+    sns.set_style("whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    sns.lineplot(data=threshold_df, x="threshold", y="roi", marker="o", ax=ax, color="steelblue")
+    best_idx = threshold_df["roi"].astype(float).idxmax()
+    best_row = threshold_df.loc[best_idx]
+    ax.axvline(best_row["threshold"], linestyle="--", color="darkorange", linewidth=1.5)
+    ax.scatter([best_row["threshold"]], [best_row["roi"]], color="darkorange", s=60, zorder=3)
+    ax.set_title("ROI por Threshold", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Threshold")
+    ax.set_ylabel("ROI")
+    return _finalize_figure(fig, show)
+
+
+def plot_confusion_matrix_threshold_comparison(
+    y_true: np.ndarray | pd.Series,
+    y_prob: np.ndarray | pd.Series,
+    *,
+    threshold_a: float,
+    threshold_b: float,
+    labels: tuple[str, str] | None = None,
+    show: bool = True,
+) -> plt.Figure:
+    """Compara matrizes de confusao em dois thresholds."""
+    y_true_arr = np.asarray(y_true, dtype=int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    labels = labels or (f"thr={threshold_a:.2f}", f"thr={threshold_b:.2f}")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    for ax, threshold, label in zip(axes, [threshold_a, threshold_b], labels):
+        y_pred = (y_prob_arr >= threshold).astype(int)
+        cm = confusion_matrix(y_true_arr, y_pred)
+        ConfusionMatrixDisplay(confusion_matrix=cm).plot(ax=ax, colorbar=False)
+        ax.set_title(label, fontsize=11, fontweight="bold")
+
+    fig.suptitle("Comparacao de Matrizes de Confusao", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_retention_vs_roi(
+    retention_df: pd.DataFrame,
+    *,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota a relacao entre taxa de retencao e ROI."""
+    sns.set_style("whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    sns.lineplot(
+        data=retention_df,
+        x="retention_rate",
+        y="roi",
+        marker="o",
+        ax=ax,
+        color="darkorange",
+    )
+    ax.set_title("Retencao x ROI", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Taxa de retencao")
+    ax.set_ylabel("ROI")
+    return _finalize_figure(fig, show)
+
+
+def plot_roi_heatmap(
+    roi_grid_df: pd.DataFrame,
+    *,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota heatmap de ROI por custo de campanha e retencao."""
+    cost_column = "activation_cost" if "activation_cost" in roi_grid_df.columns else "campaign_cost"
+    pivot = roi_grid_df.pivot(index="retention_rate", columns=cost_column, values="roi")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.heatmap(
+        pivot,
+        annot=True,
+        fmt=".2f",
+        cmap="RdBu",
+        center=0.0,
+        cbar=True,
+        ax=ax,
+    )
+    ax.set_title("Heatmap de ROI por Custo e Retencao", fontsize=12, fontweight="bold")
+    ax.set_xlabel("Custo por acionamento" if cost_column == "activation_cost" else "Custo de campanha")
+    ax.set_ylabel("Taxa de retencao")
+    return _finalize_figure(fig, show)
+
+
+def plot_single_confusion_matrix(
+    y_true: np.ndarray | pd.Series,
+    y_pred: np.ndarray | pd.Series,
+    *,
+    title: str,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota uma unica matriz de confusao."""
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    cm = confusion_matrix(np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int))
+    ConfusionMatrixDisplay(confusion_matrix=cm).plot(ax=ax, colorbar=False)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_holdout_pr_roc_subplot(
+    y_true: np.ndarray | pd.Series,
+    y_prob: np.ndarray | pd.Series,
+    *,
+    title: str,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota PR e ROC lado a lado para o holdout final."""
+    y_true_arr = np.asarray(y_true, dtype=int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+
+    precision, recall, _ = precision_recall_curve(y_true_arr, y_prob_arr)
+    pr_auc = average_precision_score(y_true_arr, y_prob_arr)
+    axes[0].plot(recall, precision, color="darkorange", linewidth=2, label=f"AP = {pr_auc:.4f}")
+    axes[0].set_title(f"{title} - PR", fontsize=11, fontweight="bold")
+    axes[0].set_xlabel("Recall")
+    axes[0].set_ylabel("Precision")
+    axes[0].legend(loc="lower left")
+
+    fpr, tpr, _ = roc_curve(y_true_arr, y_prob_arr)
+    roc_auc = roc_auc_score(y_true_arr, y_prob_arr)
+    axes[1].plot(fpr, tpr, color="steelblue", linewidth=2, label=f"AUC = {roc_auc:.4f}")
+    axes[1].plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
+    axes[1].set_title(f"{title} - ROC", fontsize=11, fontweight="bold")
+    axes[1].set_xlabel("False Positive Rate")
+    axes[1].set_ylabel("True Positive Rate")
+    axes[1].legend(loc="lower right")
+
+    return _finalize_figure(fig, show)
+
+
+def plot_single_probability_histogram(
+    y_prob: np.ndarray | pd.Series,
+    *,
+    title: str,
+    bins: int = 20,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota histograma simples das probabilidades do holdout."""
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    sns.histplot(np.asarray(y_prob, dtype=float), bins=bins, kde=False, color="steelblue", ax=ax)
+    ax.set_title(title, fontsize=11, fontweight="bold")
+    ax.set_xlabel("Probabilidade prevista")
+    ax.set_ylabel("Frequencia")
+    return _finalize_figure(fig, show)
+
+
+def plot_fairness_feature_subplot(
+    by_group_df: pd.DataFrame,
+    *,
+    feature_name: str,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota selection rate, metricas principais e taxas de erro por grupo."""
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+    sns.set_style("whitegrid")
+
+    sns.barplot(data=by_group_df, x="group", y="selection_rate", ax=axes[0], color="steelblue")
+    axes[0].set_title(f"{feature_name} - Selection Rate", fontsize=11, fontweight="bold")
+    axes[0].set_xlabel("Grupo")
+    axes[0].set_ylabel("Selection Rate")
+
+    metrics_long = by_group_df.melt(
+        id_vars="group",
+        value_vars=["recall", "precision", "f1_score"],
+        var_name="metric",
+        value_name="value",
+    )
+    sns.barplot(data=metrics_long, x="group", y="value", hue="metric", ax=axes[1])
+    axes[1].set_title(f"{feature_name} - Recall / Precision / F1", fontsize=11, fontweight="bold")
+    axes[1].set_xlabel("Grupo")
+    axes[1].set_ylabel("Valor")
+    axes[1].legend(title="Metrica", loc="best")
+
+    error_long = by_group_df.melt(
+        id_vars="group",
+        value_vars=["fpr", "fnr"],
+        var_name="metric",
+        value_name="value",
+    )
+    sns.barplot(data=error_long, x="group", y="value", hue="metric", ax=axes[2])
+    axes[2].set_title(f"{feature_name} - FPR / FNR", fontsize=11, fontweight="bold")
+    axes[2].set_xlabel("Grupo")
+    axes[2].set_ylabel("Valor")
+    axes[2].legend(title="Metrica", loc="best")
+
+    fig.suptitle(f"Fairness por Grupo - {feature_name}", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_shap_summary_subplot(
+    shap_values: np.ndarray,
+    transformed_values: np.ndarray,
+    feature_names: list[str],
+    *,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota SHAP summary dot e bar lado a lado."""
+    try:
+        import shap
+    except ModuleNotFoundError as exc:  # pragma: no cover - depende do ambiente do usuario
+        raise ModuleNotFoundError(
+            "shap nao esta instalado no ambiente atual. "
+            "Instale a dependencia no kernel do notebook para gerar os plots SHAP."
+        ) from exc
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    plt.sca(axes[0])
+    shap.summary_plot(
+        shap_values,
+        transformed_values,
+        feature_names=feature_names,
+        show=False,
+        plot_type="dot",
+    )
+    axes[0].set_title("SHAP Summary Dot", fontsize=11, fontweight="bold")
+
+    plt.sca(axes[1])
+    shap.summary_plot(
+        shap_values,
+        transformed_values,
+        feature_names=feature_names,
+        show=False,
+        plot_type="bar",
+    )
+    axes[1].set_title("SHAP Summary Bar", fontsize=11, fontweight="bold")
+    fig.suptitle("Explicabilidade SHAP - MLP Optuna", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)

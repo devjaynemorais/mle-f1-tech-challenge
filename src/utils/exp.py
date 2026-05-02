@@ -25,6 +25,11 @@ from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_validate, train_test_split
 from sklearn.metrics import brier_score_loss
+from sklearn.metrics import f1_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
@@ -710,10 +715,10 @@ def compute_campaign_economics(
     y_prob: Sequence[float] | np.ndarray,
     cltv: Sequence[float] | np.ndarray,
     threshold: float = 0.5,
-    campaign_cost: float = 100000.0,
+    activation_cost: float = 50.0,
     retention_rate: float = 0.1,
 ) -> dict[str, float]:
-    """Calcula VR, Vrec, VP, CMCA, VD, IEL e ROI."""
+    """Calcula VR, Vrec, VP, CMCA, custo total, VD, IEL e ROI."""
     y_true_arr = np.asarray(y_true, dtype=int)
     y_prob_arr = np.asarray(y_prob, dtype=float)
     cltv_arr = np.asarray(cltv, dtype=float)
@@ -733,10 +738,15 @@ def compute_campaign_economics(
     vrec = float(vr * retention_rate)
     vp = float(np.sum(y_prob_arr[fn_mask] * cltv_arr[fn_mask]))
     total_acted = tp + fp
-    cmca = float(campaign_cost / total_acted) if total_acted > 0 else 0.0
-    vd = float(fp * cmca)
-    iel = float(vrec - vp - vd)
-    roi = float((vrec - vp - campaign_cost) / campaign_cost) if campaign_cost else np.nan
+    cmca = float(activation_cost)
+    total_campaign_cost = float(total_acted * activation_cost)
+    vd = float(fp * activation_cost)
+    iel = float(vrec - vp - total_campaign_cost)
+    roi = (
+        float((vrec - vp - total_campaign_cost) / total_campaign_cost)
+        if total_campaign_cost
+        else np.nan
+    )
 
     return {
         "tp": tp,
@@ -747,11 +757,12 @@ def compute_campaign_economics(
         "vrec": vrec,
         "vp": vp,
         "cmca": cmca,
+        "total_campaign_cost": total_campaign_cost,
         "vd": vd,
         "iel": iel,
         "roi": roi,
         "threshold": float(threshold),
-        "campaign_cost": float(campaign_cost),
+        "activation_cost": float(activation_cost),
         "retention_rate": float(retention_rate),
     }
 
@@ -760,7 +771,7 @@ def build_economic_comparison_table(
     oof_predictions_by_model: dict[str, pd.DataFrame],
     *,
     metadata: pd.DataFrame,
-    campaign_cost: float = 100000.0,
+    activation_cost: float = 50.0,
     retention_rate: float = 0.1,
     threshold: float = 0.5,
 ) -> pd.DataFrame:
@@ -778,12 +789,407 @@ def build_economic_comparison_table(
             y_prob=oof_df["proba"].to_numpy(dtype=float),
             cltv=aligned_cltv,
             threshold=threshold,
-            campaign_cost=campaign_cost,
+            activation_cost=activation_cost,
             retention_rate=retention_rate,
         )
         rows_list.append({"modelo": model_name, **metrics})
 
     return pd.DataFrame(rows_list).sort_values("iel", ascending=False).reset_index(drop=True)
+
+
+def compute_binary_classification_metrics(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    threshold: float = 0.5,
+) -> dict[str, float]:
+    """Calcula metricas tecnicas binarizadas a partir de probabilidades."""
+    y_true_arr = np.asarray(y_true, dtype=int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    y_pred = (y_prob_arr >= threshold).astype(int)
+
+    return {
+        "pr_auc": float(average_precision_score(y_true_arr, y_prob_arr)),
+        "roc_auc": float(roc_auc_score(y_true_arr, y_prob_arr)),
+        "recall": float(recall_score(y_true_arr, y_pred, zero_division=0)),
+        "precision": float(precision_score(y_true_arr, y_pred, zero_division=0)),
+        "f1_score": float(f1_score(y_true_arr, y_pred, zero_division=0)),
+    }
+
+
+def optimize_threshold_for_roi(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    cltv: Sequence[float] | np.ndarray,
+    threshold_grid: Sequence[float] | np.ndarray | None = None,
+    activation_cost: float = 50.0,
+    retention_rate: float = 0.1,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Varre thresholds e retorna tabela completa mais a melhor linha por ROI."""
+    thresholds = (
+        np.asarray(list(threshold_grid), dtype=float)
+        if threshold_grid is not None
+        else np.round(np.arange(0.0, 1.01, 0.01), 4)
+    )
+    rows_list: list[dict[str, Any]] = []
+
+    for threshold in thresholds:
+        economics = compute_campaign_economics(
+            y_true=y_true,
+            y_prob=y_prob,
+            cltv=cltv,
+            threshold=float(threshold),
+            activation_cost=activation_cost,
+            retention_rate=retention_rate,
+        )
+        technical = compute_binary_classification_metrics(
+            y_true=y_true,
+            y_prob=y_prob,
+            threshold=float(threshold),
+        )
+        rows_list.append({**economics, **technical})
+
+    threshold_df = pd.DataFrame(rows_list).sort_values("threshold").reset_index(drop=True)
+    best_idx = threshold_df["roi"].astype(float).idxmax()
+    best_row = threshold_df.loc[best_idx].copy()
+    return threshold_df, best_row
+
+
+def compute_percentage_gain(reference_value: float, candidate_value: float) -> float:
+    """Calcula ganho percentual de uma metrica em relacao a um baseline."""
+    reference = float(reference_value)
+    candidate = float(candidate_value)
+    if np.isclose(reference, 0.0):
+        return np.nan
+    return ((candidate - reference) / abs(reference)) * 100.0
+
+
+def build_threshold_comparison_summary(
+    *,
+    threshold_metrics: pd.Series | dict[str, Any],
+    reference_rows: pd.DataFrame | None = None,
+    roi_column: str = "roi",
+) -> pd.DataFrame:
+    """Resume o threshold otimo e compara ganho percentual de ROI vs referencias."""
+    threshold_series = (
+        threshold_metrics if isinstance(threshold_metrics, pd.Series) else pd.Series(threshold_metrics)
+    )
+    summary_rows = [
+        {"item": "best_threshold", "value": float(threshold_series["threshold"])},
+        {"item": "roi", "value": float(threshold_series["roi"])},
+        {"item": "iel", "value": float(threshold_series["iel"])},
+        {"item": "vr", "value": float(threshold_series["vr"])},
+        {"item": "vrec", "value": float(threshold_series["vrec"])},
+        {"item": "vp", "value": float(threshold_series["vp"])},
+        {"item": "vd", "value": float(threshold_series["vd"])},
+        {"item": "pr_auc", "value": float(threshold_series["pr_auc"])},
+        {"item": "roc_auc", "value": float(threshold_series["roc_auc"])},
+        {"item": "recall", "value": float(threshold_series["recall"])},
+        {"item": "precision", "value": float(threshold_series["precision"])},
+        {"item": "f1_score", "value": float(threshold_series["f1_score"])},
+    ]
+
+    if reference_rows is not None and not reference_rows.empty:
+        for _, row in reference_rows.iterrows():
+            model_name = str(row["modelo"])
+            summary_rows.append(
+                {
+                    "item": f"roi_gain_pct_vs_{model_name.lower().replace(' ', '_')}",
+                    "value": compute_percentage_gain(row[roi_column], threshold_series["roi"]),
+                }
+            )
+
+    return pd.DataFrame(summary_rows)
+
+
+def build_retention_roi_table(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    cltv: Sequence[float] | np.ndarray,
+    threshold: float,
+    activation_cost: float,
+    retention_values: Sequence[float],
+) -> pd.DataFrame:
+    """Gera tabela de sensibilidade do ROI a diferentes taxas de retencao."""
+    rows_list: list[dict[str, Any]] = []
+    for retention_rate in retention_values:
+        rows_list.append(
+            compute_campaign_economics(
+                y_true=y_true,
+                y_prob=y_prob,
+                cltv=cltv,
+                threshold=threshold,
+                activation_cost=activation_cost,
+                retention_rate=float(retention_rate),
+            )
+        )
+
+    return pd.DataFrame(rows_list).sort_values("retention_rate").reset_index(drop=True)
+
+
+def build_campaign_retention_roi_grid(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    cltv: Sequence[float] | np.ndarray,
+    threshold: float,
+    activation_cost_values: Sequence[float],
+    retention_values: Sequence[float],
+) -> pd.DataFrame:
+    """Gera grid custo x retencao com ROI e componentes economicos."""
+    rows_list: list[dict[str, Any]] = []
+    for activation_cost in activation_cost_values:
+        for retention_rate in retention_values:
+            rows_list.append(
+                compute_campaign_economics(
+                    y_true=y_true,
+                    y_prob=y_prob,
+                    cltv=cltv,
+                    threshold=threshold,
+                    activation_cost=float(activation_cost),
+                    retention_rate=float(retention_rate),
+                )
+            )
+    return pd.DataFrame(rows_list).sort_values(
+        ["activation_cost", "retention_rate"]
+    ).reset_index(drop=True)
+
+
+def fit_final_estimator_and_generate_predictions(
+    *,
+    estimator: Any,
+    X_train: Any,
+    y_train: Any,
+    X_test: Any,
+    y_test: Any,
+    threshold: float,
+    model_name: str,
+    sample_weight: Any | None = None,
+) -> tuple[Any, pd.DataFrame]:
+    """Refita o estimador no train_val completo e gera probabilidades no holdout."""
+    fitted_estimator = clone(estimator)
+    fit_params = _fit_params_for_estimator(fitted_estimator, sample_weight)
+    fitted_estimator.fit(X_train, y_train, **fit_params)
+
+    if hasattr(fitted_estimator, "predict_proba"):
+        y_prob = fitted_estimator.predict_proba(X_test)[:, 1]
+    else:
+        decision = fitted_estimator.decision_function(X_test)
+        y_prob = 1.0 / (1.0 + np.exp(-np.asarray(decision, dtype=float)))
+
+    index_values = (
+        pd.Index(X_test.index)
+        if hasattr(X_test, "index")
+        else pd.Index(np.arange(len(np.asarray(y_prob))))
+    )
+    holdout_df = pd.DataFrame(
+        {
+            "row_index": index_values.to_numpy(),
+            "y_true": np.asarray(y_test, dtype=int),
+            "proba": np.asarray(y_prob, dtype=float),
+            "y_pred": (np.asarray(y_prob, dtype=float) >= float(threshold)).astype(int),
+            "threshold": float(threshold),
+            "model": model_name,
+        }
+    )
+    return fitted_estimator, holdout_df
+
+
+def compute_holdout_technical_metrics(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    threshold: float,
+) -> dict[str, float]:
+    """Alias semantico para metricas tecnicas do holdout."""
+    return compute_binary_classification_metrics(
+        y_true=y_true,
+        y_prob=y_prob,
+        threshold=threshold,
+    )
+
+
+def _safe_ratio(values: pd.Series) -> float:
+    min_value = float(values.min())
+    max_value = float(values.max())
+    if np.isclose(max_value, 0.0):
+        return np.nan
+    return float(min_value / max_value)
+
+
+def _binary_group_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
+    positives = y_true == 1
+    negatives = y_true == 0
+    tp = int(((y_pred == 1) & positives).sum())
+    fp = int(((y_pred == 1) & negatives).sum())
+    fn = int(((y_pred == 0) & positives).sum())
+    tn = int(((y_pred == 0) & negatives).sum())
+
+    selection_rate = float((y_pred == 1).mean()) if len(y_pred) else np.nan
+    recall = float(tp / (tp + fn)) if (tp + fn) else np.nan
+    precision = float(tp / (tp + fp)) if (tp + fp) else np.nan
+    f1 = float((2 * precision * recall) / (precision + recall)) if precision + recall else np.nan
+    fpr = float(fp / (fp + tn)) if (fp + tn) else np.nan
+    fnr = float(fn / (fn + tp)) if (fn + tp) else np.nan
+
+    return {
+        "support": int(len(y_true)),
+        "selection_rate": selection_rate,
+        "recall": recall,
+        "precision": precision,
+        "f1_score": f1,
+        "fpr": fpr,
+        "fnr": fnr,
+    }
+
+
+def build_fairness_report_for_feature(
+    *,
+    y_true: Sequence[int] | pd.Series,
+    y_pred: Sequence[int] | pd.Series,
+    sensitive_feature: Sequence[Any] | pd.Series,
+    feature_name: str,
+) -> dict[str, Any]:
+    """Gera relatorio tabular de fairness por grupo e resumo de disparidade."""
+    frame = pd.DataFrame(
+        {
+            "y_true": pd.Series(y_true, dtype=int).reset_index(drop=True),
+            "y_pred": pd.Series(y_pred, dtype=int).reset_index(drop=True),
+            "group": pd.Series(sensitive_feature, dtype="object").reset_index(drop=True),
+        }
+    )
+
+    by_group_rows: list[dict[str, Any]] = []
+    for group_value, group_df in frame.groupby("group", dropna=False):
+        metrics = _binary_group_metrics(group_df["y_true"], group_df["y_pred"])
+        by_group_rows.append({"group": str(group_value), **metrics})
+
+    by_group = pd.DataFrame(by_group_rows).sort_values("group").reset_index(drop=True)
+    tracked_metrics = ["selection_rate", "recall", "precision", "f1_score", "fpr", "fnr"]
+    summary = pd.DataFrame(
+        [
+            {
+                "metric": metric,
+                "difference": float(by_group[metric].max() - by_group[metric].min()),
+                "ratio": _safe_ratio(by_group[metric]),
+            }
+            for metric in tracked_metrics
+        ]
+    )
+
+    selection_diff = float(by_group["selection_rate"].max() - by_group["selection_rate"].min())
+    tpr_diff = float(by_group["recall"].max() - by_group["recall"].min())
+    fpr_diff = float(by_group["fpr"].max() - by_group["fpr"].min())
+    fairness_metrics = pd.DataFrame(
+        [
+            {"metric": "demographic_parity_difference", "value": selection_diff},
+            {"metric": "equalized_odds_difference", "value": max(tpr_diff, fpr_diff)},
+            {
+                "metric": "equalized_odds_ratio",
+                "value": np.nanmin(
+                    [
+                        _safe_ratio(by_group["recall"]),
+                        _safe_ratio(by_group["fpr"]),
+                    ]
+                ),
+            },
+        ]
+    )
+
+    return {
+        "feature_name": feature_name,
+        "by_group": by_group,
+        "summary": summary,
+        "fairness_metrics": fairness_metrics,
+    }
+
+
+def build_fairness_reports_bundle(
+    *,
+    y_true: Sequence[int] | pd.Series,
+    y_pred: Sequence[int] | pd.Series,
+    X_sensitive: pd.DataFrame,
+    features: Sequence[str],
+) -> dict[str, dict[str, Any]]:
+    """Gera relatorios de fairness para multiplas features sensiveis."""
+    reports: dict[str, dict[str, Any]] = {}
+    for feature_name in features:
+        reports[feature_name] = build_fairness_report_for_feature(
+            y_true=y_true,
+            y_pred=y_pred,
+            sensitive_feature=X_sensitive[feature_name],
+            feature_name=feature_name,
+        )
+    return reports
+
+
+def consolidate_fairness_reports(
+    fairness_reports: dict[str, dict[str, Any]],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Consolida tabelas de fairness por grupo e metricas agregadas."""
+    by_group_frames: list[pd.DataFrame] = []
+    summary_frames: list[pd.DataFrame] = []
+    for feature_name, report in fairness_reports.items():
+        by_group_frames.append(report["by_group"].assign(feature_name=feature_name))
+        summary_frames.append(
+            report["summary"].assign(feature_name=feature_name, table="summary")
+        )
+        summary_frames.append(
+            report["fairness_metrics"].assign(feature_name=feature_name, table="fairness_metrics")
+        )
+
+    by_group_df = pd.concat(by_group_frames, ignore_index=True) if by_group_frames else pd.DataFrame()
+    summary_df = pd.concat(summary_frames, ignore_index=True) if summary_frames else pd.DataFrame()
+    return by_group_df, summary_df
+
+
+def compute_shap_summary_payload(
+    *,
+    fitted_estimator: Any,
+    X_reference: pd.DataFrame,
+    sample_size: int = 200,
+    background_size: int = 50,
+    random_state: int = 42,
+) -> dict[str, Any]:
+    """Calcula SHAP values para o modelo final usando a representacao transformada."""
+    try:
+        import shap
+    except ModuleNotFoundError as exc:  # pragma: no cover - depende do ambiente do usuario
+        raise ModuleNotFoundError(
+            "shap nao esta instalado no ambiente atual. "
+            "Instale a dependencia no kernel do notebook para gerar os graficos de explicabilidade."
+        ) from exc
+
+    if not isinstance(fitted_estimator, Pipeline):
+        raise TypeError("compute_shap_summary_payload requer um sklearn Pipeline ajustado.")
+
+    model_step = fitted_estimator.named_steps["model"]
+    pre_model_pipeline = fitted_estimator[:-1]
+
+    sample_df = X_reference.sample(
+        n=min(sample_size, len(X_reference)),
+        random_state=random_state,
+    ).copy()
+    transformed_sample = to_dense_float32(pre_model_pipeline.transform(sample_df))
+    background = transformed_sample[: min(background_size, len(transformed_sample))]
+
+    def predict_fn(data: np.ndarray) -> np.ndarray:
+        return model_step.predict_proba(data)[:, 1]
+
+    explainer = shap.KernelExplainer(predict_fn, background)
+    shap_values = explainer.shap_values(transformed_sample, nsamples="auto")
+    if isinstance(shap_values, list):
+        shap_values = shap_values[-1]
+
+    feature_names = extract_selected_feature_names(fitted_estimator, X_reference)
+    return {
+        "shap_values": np.asarray(shap_values, dtype=float),
+        "transformed_values": transformed_sample,
+        "feature_names": feature_names,
+        "sample_index": sample_df.index.tolist(),
+    }
 
 
 def build_artifact_name(prefix: str, model_name: str, suffix: str) -> str:
@@ -982,15 +1388,38 @@ def build_k_grid(
 
 def extract_selected_feature_names(
     best_estimator: Any,
-    feature_names: Sequence[str],
+    feature_names: Sequence[str] | pd.DataFrame,
     selector_step: str = "selector",
 ) -> list[str]:
     """Extrai os nomes das features mantidas pelo seletor do pipeline vencedor."""
+    if not isinstance(best_estimator, Pipeline):
+        raise TypeError("extract_selected_feature_names requer um sklearn Pipeline.")
+
+    if isinstance(feature_names, pd.DataFrame):
+        transformed = feature_names.copy()
+        current_feature_names = np.asarray(feature_names.columns, dtype=object)
+        for step_name, step in best_estimator.steps:
+            if step_name in {"model", "scaler"}:
+                continue
+            if step_name == selector_step:
+                support_mask = step.get_support()
+                return current_feature_names[support_mask].astype(str).tolist()
+            if step_name == "prep":
+                transformed = step.transform(transformed)
+                current_feature_names = np.asarray(step.get_feature_names_out(), dtype=object)
+            else:
+                transformed = step.transform(transformed)
+                current_feature_names = np.asarray(
+                    getattr(transformed, "columns", current_feature_names),
+                    dtype=object,
+                )
+        raise ValueError(f"O pipeline informado nao possui a etapa '{selector_step}'.")
+
     selector = best_estimator.named_steps[selector_step]
     support_mask = selector.get_support()
     feature_names_arr = np.asarray(feature_names, dtype=object)
     selected = feature_names_arr[support_mask]
-    return selected.tolist()
+    return selected.astype(str).tolist()
 
 
 def summarize_grid_search_results(
