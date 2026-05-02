@@ -131,3 +131,67 @@ validation:
 mlflow:
   experiment_name: Churn_Prediction_Pipeline
   tracking_uri: sqlite:///mlflow.db
+
+production:
+  active_model: mlp_optuna_prod
+
+  models:
+    mlp_optuna_prod:
+      display_name: MLP Optuna
+      framework: sklearn
+      threshold: 0.35
+
+      source:
+        tracking_uri: sqlite:///mlflow.db
+        experiment_name: tc-f1-nb03-MLP-production-performance
+        run_id: 71b3084f4c444df4a2470992a83cbe92
+        model_uri: runs:/71b3084f4c444df4a2470992a83cbe92/model
+
+      local:
+        artifact_dir: models/production/mlp_optuna
+        metadata_path: models/production/mlp_optuna/serving_metadata.json
+
+      pipeline:
+        type: sklearn_pipeline
+        steps:
+          - fe
+          - geo
+          - prep
+          - selector
+          - model
+        custom_transformers:
+          - src.features.feature_engineer_transformer.FeatureEngineerTransformer
+          - src.features.geo_transformer.GeoTransformer
+        required_columns:
+          - Gender
+          - Senior Citizen
+          - Partner
+          - Dependents
+          - Tenure Months
+          - Phone Service
+          - Multiple Lines
+          - Internet Service
+          - Online Security
+          - Online Backup
+          - Device Protection
+          - Tech Support
+          - Streaming TV
+          - Streaming Movies
+          - Contract
+          - Paperless Billing
+          - Payment Method
+          - Monthly Charges
+          - Total Charges
+          - CLTV
+        optional_columns:
+          - City
+          - Zip Code
+          - Latitude
+          - Longitude
+          - Lat Long
+          - Churn Score
+
+      inference:
+        input_path: data/interim/telecom_clean.csv
+        output_path: models/predictions/mlp_optuna_predictions.csv
+        target_column: Churn Value

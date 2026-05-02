@@ -54,6 +54,8 @@ def health():
         status="ok",
         model=predictor.model_name,
         model_path=predictor.model_path,
+        model_uri=predictor.model_uri,
+        threshold=predictor.threshold,
     )
 
 
@@ -73,6 +75,7 @@ def predict_batch(body: BatchPredictRequest):
         CHURN_PROBABILITY.observe(pred.churn_probability)
     return BatchPredictResponse(
         model=predictor.model_name,
+        threshold=predictor.threshold,
         n_records=len(body.records),
         predictions=predictions,
     )
