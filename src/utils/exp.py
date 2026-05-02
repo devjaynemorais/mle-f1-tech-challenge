@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import inspect
 import json
+import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -154,11 +155,28 @@ def artifact_uri_to_local_path(
     if artifact_uri.startswith("mlflow-artifacts:/"):
         relative = artifact_uri.replace("mlflow-artifacts:/", "", 1).strip("/")
         base_path = workspace_path / "mlartifacts" / Path(relative)
-    elif artifact_uri.startswith("file://"):
-        from urllib.parse import urlparse
-        from urllib.request import url2pathname
 
-        base_path = Path(url2pathname(urlparse(artifact_uri).path))
+    elif artifact_uri.startswith("file:"):  # covers file://, file:/, and file:C:\...
+        from urllib.parse import unquote, urlparse
+
+        # Normalise bare "file:C:\..." → "file:///C:\..." so urlparse handles it
+        normalised = artifact_uri
+        if not artifact_uri.startswith("file://"):
+            normalised = "file:///" + artifact_uri[len("file:"):]
+
+        parsed = urlparse(normalised)
+        path = parsed.path
+
+        # urlparse gives "/C:/..." on Windows — strip the leading slash
+        if sys.platform == "win32" and path.startswith("/") and len(path) > 2 and path[2] == ":":
+            path = path[1:]
+
+        path = unquote(path)
+        if sys.platform == "win32":
+            path = path.replace("/", "\\")
+
+        base_path = Path(path)
+
     else:
         base_path = Path(artifact_uri)
         if not base_path.is_absolute():
