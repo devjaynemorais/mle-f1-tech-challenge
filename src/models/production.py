@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+import os
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -120,9 +121,15 @@ def load_production_settings(
     inference_cfg = model_cfg["inference"]
     pipeline_cfg = model_cfg["pipeline"]
 
-    tracking_uri = resolve_tracking_uri(
-        source_cfg["tracking_uri"],
-        workspace_root=workspace_root,
+    # MLFLOW_TRACKING_URI env var takes precedence (e.g. http://mlflow:5000 in Docker)
+    env_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    tracking_uri = (
+        env_tracking_uri
+        if env_tracking_uri
+        else resolve_tracking_uri(
+            source_cfg["tracking_uri"],
+            workspace_root=workspace_root,
+        )
     )
 
     return ProductionModelSettings(
@@ -214,7 +221,9 @@ def materialize_production_model(
         if not settings.metadata_path.exists():
             settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
             settings.metadata_path.write_text(
-                json.dumps(_build_serving_metadata(settings), indent=2, ensure_ascii=False),
+                json.dumps(
+                    _build_serving_metadata(settings), indent=2, ensure_ascii=False
+                ),
                 encoding="utf-8",
             )
         return settings.local_artifact_dir

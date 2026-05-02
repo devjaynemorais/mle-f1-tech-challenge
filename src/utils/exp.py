@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import copy
 import inspect
 import json
-from pathlib import Path
 import tempfile
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
-
-import copy
 
 import mlflow
 import numpy as np
@@ -23,28 +22,31 @@ from sklearn.base import BaseEstimator, ClassifierMixin, clone
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import cross_validate, train_test_split
-from sklearn.metrics import brier_score_loss
-from sklearn.metrics import f1_score
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import average_precision_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 from torch.utils.data import DataLoader, TensorDataset
 
 try:
     from xgboost import XGBClassifier
-except ModuleNotFoundError:  # pragma: no cover - exercised when dependency is absent locally
+except (
+    ModuleNotFoundError
+):  # pragma: no cover - exercised when dependency is absent locally
     XGBClassifier = None
 
 from src.features.feature_engineer_transformer import FeatureEngineerTransformer
 from src.features.geo_transformer import GeoTransformer
-from src.models.mlp import CityEmbeddingMLP, DEFAULT_DEVICE, MLP
+from src.models.mlp import DEFAULT_DEVICE, MLP, CityEmbeddingMLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")
 DEFAULT_METADATA_COLUMNS = ("CLTV", "CustomerID")
@@ -78,7 +80,9 @@ DEFAULT_ROUND4_FE_PARAMS = {
 }
 
 
-def resolve_tracking_uri(tracking_uri: str, workspace_root: str | Path | None = None) -> str:
+def resolve_tracking_uri(
+    tracking_uri: str, workspace_root: str | Path | None = None
+) -> str:
     """Resolve URIs locais do MLflow para caminhos absolutos quando necessário."""
     if tracking_uri.startswith("sqlite:///") and workspace_root is not None:
         db_name = tracking_uri.replace("sqlite:///", "", 1)
@@ -103,7 +107,11 @@ def build_default_preprocessor() -> ColumnTransformer:
     return ColumnTransformer(
         transformers=[
             ("cat", ohe, make_column_selector(dtype_include=["object", "category"])),
-            ("num", "passthrough", make_column_selector(dtype_exclude=["object", "category"])),
+            (
+                "num",
+                "passthrough",
+                make_column_selector(dtype_exclude=["object", "category"]),
+            ),
         ],
         remainder="drop",
     )
@@ -147,7 +155,10 @@ def artifact_uri_to_local_path(
         relative = artifact_uri.replace("mlflow-artifacts:/", "", 1).strip("/")
         base_path = workspace_path / "mlartifacts" / Path(relative)
     elif artifact_uri.startswith("file://"):
-        base_path = Path(artifact_uri.replace("file://", "", 1))
+        from urllib.parse import urlparse
+        from urllib.request import url2pathname
+
+        base_path = Path(url2pathname(urlparse(artifact_uri).path))
     else:
         base_path = Path(artifact_uri)
         if not base_path.is_absolute():
@@ -178,7 +189,9 @@ def find_run_by_name(
     for run in runs:
         if tags is None:
             return run
-        if all(str(run.data.tags.get(key)) == str(value) for key, value in tags.items()):
+        if all(
+            str(run.data.tags.get(key)) == str(value) for key, value in tags.items()
+        ):
             return run
 
     raise RuntimeError(
@@ -201,7 +214,9 @@ def resolve_notebook03_runs(
         baseline_parent_run_name,
         tags={"phase": "baseline_inicial"},
     )
-    baseline_experiment_id = client.get_experiment_by_name(baseline_experiment).experiment_id
+    baseline_experiment_id = client.get_experiment_by_name(
+        baseline_experiment
+    ).experiment_id
     child_runs = client.search_runs(
         [baseline_experiment_id],
         filter_string=f"tags.mlflow.parentRunId = '{baseline_parent.info.run_id}'",
@@ -348,7 +363,9 @@ def _str_param(params: dict[str, Any], key: str, default: str) -> str:
     return str(params.get(key, default))
 
 
-def build_baseline_logistic_pipeline(run_params: dict[str, Any] | None = None) -> Pipeline:
+def build_baseline_logistic_pipeline(
+    run_params: dict[str, Any] | None = None
+) -> Pipeline:
     """Reconstrói o baseline inicial da regressão logística."""
     run_params = run_params or {}
     logistic_params = {
@@ -508,7 +525,9 @@ def build_notebook03_estimators(
     }
 
 
-def _fit_params_for_estimator(estimator: Any, sample_weight: Any | None) -> dict[str, Any]:
+def _fit_params_for_estimator(
+    estimator: Any, sample_weight: Any | None
+) -> dict[str, Any]:
     """Monta fit_params seguros para estimadores e pipelines com sample_weight."""
     if sample_weight is None:
         return {}
@@ -534,14 +553,18 @@ def generate_oof_predictions(
     model_name: str | None = None,
 ) -> pd.DataFrame:
     """Gera probabilidades OOF para um estimador."""
-    y_series = y if isinstance(y, pd.Series) else pd.Series(y, index=getattr(X, "index", None))
+    y_series = (
+        y if isinstance(y, pd.Series) else pd.Series(y, index=getattr(X, "index", None))
+    )
     if hasattr(X, "index"):
         index_values = pd.Index(X.index)
     else:
         index_values = pd.Index(np.arange(len(y_series)))
 
     fold_frames: list[pd.DataFrame] = []
-    for fold_number, (train_idx, valid_idx) in enumerate(cv.split(X, y_series), start=1):
+    for fold_number, (train_idx, valid_idx) in enumerate(
+        cv.split(X, y_series), start=1
+    ):
         estimator_fold = clone(estimator)
         X_train = rows(X, train_idx)
         X_valid = rows(X, valid_idx)
@@ -654,7 +677,11 @@ def build_cross_validate_comparison_table(
         row["score_time(mean)"] = float(np.mean(cv_res["score_time"]))
         rows_list.append(row)
 
-    return pd.DataFrame(rows_list).sort_values("PR-AUC", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows_list)
+        .sort_values("PR-AUC", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def calculate_expected_calibration_error(
@@ -794,7 +821,11 @@ def build_economic_comparison_table(
         )
         rows_list.append({"modelo": model_name, **metrics})
 
-    return pd.DataFrame(rows_list).sort_values("iel", ascending=False).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows_list)
+        .sort_values("iel", ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def compute_binary_classification_metrics(
@@ -850,7 +881,9 @@ def optimize_threshold_for_roi(
         )
         rows_list.append({**economics, **technical})
 
-    threshold_df = pd.DataFrame(rows_list).sort_values("threshold").reset_index(drop=True)
+    threshold_df = (
+        pd.DataFrame(rows_list).sort_values("threshold").reset_index(drop=True)
+    )
     best_idx = threshold_df["roi"].astype(float).idxmax()
     best_row = threshold_df.loc[best_idx].copy()
     return threshold_df, best_row
@@ -873,7 +906,9 @@ def build_threshold_comparison_summary(
 ) -> pd.DataFrame:
     """Resume o threshold otimo e compara ganho percentual de ROI vs referencias."""
     threshold_series = (
-        threshold_metrics if isinstance(threshold_metrics, pd.Series) else pd.Series(threshold_metrics)
+        threshold_metrics
+        if isinstance(threshold_metrics, pd.Series)
+        else pd.Series(threshold_metrics)
     )
     summary_rows = [
         {"item": "best_threshold", "value": float(threshold_series["threshold"])},
@@ -896,7 +931,9 @@ def build_threshold_comparison_summary(
             summary_rows.append(
                 {
                     "item": f"roi_gain_pct_vs_{model_name.lower().replace(' ', '_')}",
-                    "value": compute_percentage_gain(row[roi_column], threshold_series["roi"]),
+                    "value": compute_percentage_gain(
+                        row[roi_column], threshold_series["roi"]
+                    ),
                 }
             )
 
@@ -952,9 +989,11 @@ def build_campaign_retention_roi_grid(
                     retention_rate=float(retention_rate),
                 )
             )
-    return pd.DataFrame(rows_list).sort_values(
-        ["activation_cost", "retention_rate"]
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows_list)
+        .sort_values(["activation_cost", "retention_rate"])
+        .reset_index(drop=True)
+    )
 
 
 def fit_final_estimator_and_generate_predictions(
@@ -1030,7 +1069,11 @@ def _binary_group_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, flo
     selection_rate = float((y_pred == 1).mean()) if len(y_pred) else np.nan
     recall = float(tp / (tp + fn)) if (tp + fn) else np.nan
     precision = float(tp / (tp + fp)) if (tp + fp) else np.nan
-    f1 = float((2 * precision * recall) / (precision + recall)) if precision + recall else np.nan
+    f1 = (
+        float((2 * precision * recall) / (precision + recall))
+        if precision + recall
+        else np.nan
+    )
     fpr = float(fp / (fp + tn)) if (fp + tn) else np.nan
     fnr = float(fn / (fn + tp)) if (fn + tp) else np.nan
 
@@ -1057,7 +1100,9 @@ def build_fairness_report_for_feature(
         {
             "y_true": pd.Series(y_true, dtype=int).reset_index(drop=True),
             "y_pred": pd.Series(y_pred, dtype=int).reset_index(drop=True),
-            "group": pd.Series(sensitive_feature, dtype="object").reset_index(drop=True),
+            "group": pd.Series(sensitive_feature, dtype="object").reset_index(
+                drop=True
+            ),
         }
     )
 
@@ -1067,7 +1112,14 @@ def build_fairness_report_for_feature(
         by_group_rows.append({"group": str(group_value), **metrics})
 
     by_group = pd.DataFrame(by_group_rows).sort_values("group").reset_index(drop=True)
-    tracked_metrics = ["selection_rate", "recall", "precision", "f1_score", "fpr", "fnr"]
+    tracked_metrics = [
+        "selection_rate",
+        "recall",
+        "precision",
+        "f1_score",
+        "fpr",
+        "fnr",
+    ]
     summary = pd.DataFrame(
         [
             {
@@ -1079,7 +1131,9 @@ def build_fairness_report_for_feature(
         ]
     )
 
-    selection_diff = float(by_group["selection_rate"].max() - by_group["selection_rate"].min())
+    selection_diff = float(
+        by_group["selection_rate"].max() - by_group["selection_rate"].min()
+    )
     tpr_diff = float(by_group["recall"].max() - by_group["recall"].min())
     fpr_diff = float(by_group["fpr"].max() - by_group["fpr"].min())
     fairness_metrics = pd.DataFrame(
@@ -1137,11 +1191,21 @@ def consolidate_fairness_reports(
             report["summary"].assign(feature_name=feature_name, table="summary")
         )
         summary_frames.append(
-            report["fairness_metrics"].assign(feature_name=feature_name, table="fairness_metrics")
+            report["fairness_metrics"].assign(
+                feature_name=feature_name, table="fairness_metrics"
+            )
         )
 
-    by_group_df = pd.concat(by_group_frames, ignore_index=True) if by_group_frames else pd.DataFrame()
-    summary_df = pd.concat(summary_frames, ignore_index=True) if summary_frames else pd.DataFrame()
+    by_group_df = (
+        pd.concat(by_group_frames, ignore_index=True)
+        if by_group_frames
+        else pd.DataFrame()
+    )
+    summary_df = (
+        pd.concat(summary_frames, ignore_index=True)
+        if summary_frames
+        else pd.DataFrame()
+    )
     return by_group_df, summary_df
 
 
@@ -1156,14 +1220,19 @@ def compute_shap_summary_payload(
     """Calcula SHAP values para o modelo final usando a representacao transformada."""
     try:
         import shap
-    except ModuleNotFoundError as exc:  # pragma: no cover - depende do ambiente do usuario
+    except (
+        ModuleNotFoundError
+    ) as exc:  # pragma: no cover - depende do ambiente do usuario
         raise ModuleNotFoundError(
             "shap nao esta instalado no ambiente atual. "
-            "Instale a dependencia no kernel do notebook para gerar os graficos de explicabilidade."
+            "Instale a dependencia no kernel do notebook para gerar os graficos de"
+            " explicabilidade."
         ) from exc
 
     if not isinstance(fitted_estimator, Pipeline):
-        raise TypeError("compute_shap_summary_payload requer um sklearn Pipeline ajustado.")
+        raise TypeError(
+            "compute_shap_summary_payload requer um sklearn Pipeline ajustado."
+        )
 
     model_step = fitted_estimator.named_steps["model"]
     pre_model_pipeline = fitted_estimator[:-1]
@@ -1194,12 +1263,7 @@ def compute_shap_summary_payload(
 
 def build_artifact_name(prefix: str, model_name: str, suffix: str) -> str:
     """Padroniza nomes de artefatos do notebook 03."""
-    slug = (
-        model_name.lower()
-        .replace(" ", "_")
-        .replace("/", "_")
-        .replace("-", "_")
-    )
+    slug = model_name.lower().replace(" ", "_").replace("/", "_").replace("-", "_")
     return f"{prefix}_{slug}.{suffix}"
 
 
@@ -1300,7 +1364,9 @@ def make_embedding_dataloader(
 ) -> DataLoader:
     """Cria DataLoader para MLP com duas entradas: tabular e city embedding."""
     X_tab_arr = torch.tensor(to_dense_float32(X_tabular), dtype=torch.float32)
-    city_arr = torch.tensor(np.asarray(city_ids, dtype=np.int64).reshape(-1), dtype=torch.long)
+    city_arr = torch.tensor(
+        np.asarray(city_ids, dtype=np.int64).reshape(-1), dtype=torch.long
+    )
     y_arr = torch.tensor(to_float32_vector(y), dtype=torch.float32)
 
     tensors = [X_tab_arr, city_arr, y_arr]
@@ -1406,7 +1472,9 @@ def extract_selected_feature_names(
                 return current_feature_names[support_mask].astype(str).tolist()
             if step_name == "prep":
                 transformed = step.transform(transformed)
-                current_feature_names = np.asarray(step.get_feature_names_out(), dtype=object)
+                current_feature_names = np.asarray(
+                    step.get_feature_names_out(), dtype=object
+                )
             else:
                 transformed = step.transform(transformed)
                 current_feature_names = np.asarray(
@@ -1462,9 +1530,7 @@ def format_selected_features_log(
     selected_lines = "\n".join(f"- {feature}" for feature in selected_features_list)
 
     if k_value == "all":
-        k_message = (
-            "all (todas as features processadas foram mantidas)"
-        )
+        k_message = "all (todas as features processadas foram mantidas)"
     else:
         k_message = str(k_value)
 
@@ -1778,7 +1844,9 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
 
         classes = unique_labels(y_checked)
         if len(classes) != 2:
-            raise ValueError("MLPClassifierWrapper suporta apenas classificacao binaria.")
+            raise ValueError(
+                "MLPClassifierWrapper suporta apenas classificacao binaria."
+            )
 
         self.classes_ = np.sort(classes)
         self.n_features_in_ = X_checked.shape[1]
@@ -1827,7 +1895,9 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
         ).to(self.device_)
 
         pos_weight_value = self._compute_pos_weight(y_train)
-        pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32).to(self.device_)
+        pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32).to(
+            self.device_
+        )
 
         self.criterion_ = nn.BCEWithLogitsLoss(
             pos_weight=pos_weight,
@@ -1857,7 +1927,7 @@ class MLPClassifierWrapper(ClassifierMixin, BaseEstimator):
             if self.verbose and epoch % 10 == 0:
                 print(
                     f"[MLP] epoch={epoch} train_loss={train_loss:.4f} "
-                    f"val_loss={val_loss:.4f} patience={patience_counter}/{self.patience}"
+                    f"val_loss={val_loss:.4f} patience={patience_counter}/{self.patience}"  # noqa: E501
                 )
 
             if patience_counter >= self.patience:
@@ -1992,7 +2062,12 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
         preprocessor: Any,
         feature_engineer: Any | None = None,
         city_column: str = "City",
-        geo_drop_columns: tuple[str, ...] = ("Zip Code", "Latitude", "Longitude", "Lat Long"),
+        geo_drop_columns: tuple[str, ...] = (
+            "Zip Code",
+            "Latitude",
+            "Longitude",
+            "Lat Long",
+        ),
         embedding_dim: int | None = None,
         unknown_city_index: int = 0,
         hidden_dim: int = 64,
@@ -2037,7 +2112,9 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
 
     def fit(self, X: Any, y: Any, sample_weight: Any | None = None):
         if not isinstance(X, pd.DataFrame):
-            raise TypeError("MLPEmbeddingClassifierWrapper requer X como pandas.DataFrame.")
+            raise TypeError(
+                "MLPEmbeddingClassifierWrapper requer X como pandas.DataFrame."
+            )
 
         y_array = np.asarray(y)
         if len(X) != len(y_array):
@@ -2045,7 +2122,9 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
 
         classes = unique_labels(y_array)
         if len(classes) != 2:
-            raise ValueError("MLPEmbeddingClassifierWrapper suporta apenas classificacao binaria.")
+            raise ValueError(
+                "MLPEmbeddingClassifierWrapper suporta apenas classificacao binaria."
+            )
 
         self.classes_ = np.sort(classes)
         self.device_ = resolve_device(self.device)
@@ -2143,7 +2222,9 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
         ).to(self.device_)
 
         pos_weight_value = self._compute_pos_weight(y_train)
-        pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32).to(self.device_)
+        pos_weight = torch.tensor([pos_weight_value], dtype=torch.float32).to(
+            self.device_
+        )
 
         self.criterion_ = nn.BCEWithLogitsLoss(
             pos_weight=pos_weight,
@@ -2173,7 +2254,7 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
             if self.verbose and epoch % 10 == 0:
                 print(
                     f"[MLP+Embedding] epoch={epoch} train_loss={train_loss:.4f} "
-                    f"val_loss={val_loss:.4f} patience={patience_counter}/{self.patience}"
+                    f"val_loss={val_loss:.4f} patience={patience_counter}/{self.patience}"  # noqa: E501
                 )
 
             if patience_counter >= self.patience:
@@ -2197,8 +2278,12 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
     def decision_function(self, X: Any) -> np.ndarray:
         check_is_fitted(self, "model_")
         X_tab_enc, city_ids = self._prepare_eval_inputs(X)
-        x_tab_tensor = torch.tensor(to_dense_float32(X_tab_enc), dtype=torch.float32).to(self.device_)
-        x_city_tensor = torch.tensor(np.asarray(city_ids, dtype=np.int64), dtype=torch.long).to(self.device_)
+        x_tab_tensor = torch.tensor(
+            to_dense_float32(X_tab_enc), dtype=torch.float32
+        ).to(self.device_)
+        x_city_tensor = torch.tensor(
+            np.asarray(city_ids, dtype=np.int64), dtype=torch.long
+        ).to(self.device_)
 
         self.model_.eval()
         with torch.no_grad():
@@ -2211,7 +2296,9 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
 
     def _prepare_eval_inputs(self, X: Any) -> tuple[Any, np.ndarray]:
         if not isinstance(X, pd.DataFrame):
-            raise TypeError("MLPEmbeddingClassifierWrapper requer X como pandas.DataFrame.")
+            raise TypeError(
+                "MLPEmbeddingClassifierWrapper requer X como pandas.DataFrame."
+            )
 
         X_eval = X.copy()
         if self.feature_engineer_ is not None:
@@ -2261,7 +2348,12 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
         total_loss = 0.0
 
         for batch in dataloader:
-            x_tab_batch, x_city_batch, y_batch, sample_weight = self._unpack_embedding_batch(batch)
+            (
+                x_tab_batch,
+                x_city_batch,
+                y_batch,
+                sample_weight,
+            ) = self._unpack_embedding_batch(batch)
 
             self.optimizer_.zero_grad()
             logits = self.model_(x_tab_batch, x_city_batch)
@@ -2278,7 +2370,12 @@ class MLPEmbeddingClassifierWrapper(ClassifierMixin, BaseEstimator):
 
         with torch.no_grad():
             for batch in dataloader:
-                x_tab_batch, x_city_batch, y_batch, sample_weight = self._unpack_embedding_batch(batch)
+                (
+                    x_tab_batch,
+                    x_city_batch,
+                    y_batch,
+                    sample_weight,
+                ) = self._unpack_embedding_batch(batch)
                 logits = self.model_(x_tab_batch, x_city_batch)
                 total_loss += self._compute_weighted_loss(
                     logits,

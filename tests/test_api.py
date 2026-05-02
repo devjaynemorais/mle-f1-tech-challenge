@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.api.main import app
+from src.api.schemas import PredictionResult
 
 client = TestClient(app)
 
@@ -45,10 +46,10 @@ class _DummyPredictor:
     def predict_batch(self, records, threshold=None):
         effective_threshold = self.threshold if threshold is None else threshold
         return [
-            {
-                "churn_probability": 0.82,
-                "churn_label": int(0.82 >= effective_threshold),
-            }
+            PredictionResult(
+                churn_probability=0.82,
+                churn_label=int(0.82 >= effective_threshold),
+            )
             for _ in records
         ]
 
@@ -96,7 +97,9 @@ def test_predict_body_invalido_retorna_422():
 
 
 def test_predict_campo_ausente_retorna_422():
-    record_incompleto = {key: value for key, value in _SAMPLE_RECORD.items() if key != "gender"}
+    record_incompleto = {
+        key: value for key, value in _SAMPLE_RECORD.items() if key != "gender"
+    }
     response = client.post("/predict", json={"records": [record_incompleto]})
     assert response.status_code == 422
 

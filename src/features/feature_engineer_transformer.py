@@ -134,7 +134,11 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
         transformed = X.copy()
 
         if self.drop_churn_score:
-            transformed = transformed.drop(columns=[self.churn_score_column], errors="ignore")
+            transformed = transformed.drop(
+                columns=[self.churn_score_column], errors="ignore"
+            )
+        elif self.churn_score_column not in transformed.columns:
+            transformed[self.churn_score_column] = 0
 
         if self.add_engagement_score:
             _require_columns(
@@ -155,9 +159,9 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
                 labels=list(self.tenure_labels),
                 include_lowest=True,
             )
-            transformed[self.tenure_output_column] = (
-                tenure_group.map(self.tenure_mapping).astype("Int64")
-            )
+            transformed[self.tenure_output_column] = tenure_group.map(
+                self.tenure_mapping
+            ).astype("Int64")
 
         if self.add_tenure_log:
             _require_columns(transformed, [self.tenure_column], "add_tenure_log")
@@ -166,7 +170,9 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
             )
 
         if self.add_contract_ordinal:
-            _require_columns(transformed, [self.contract_column], "add_contract_ordinal")
+            _require_columns(
+                transformed, [self.contract_column], "add_contract_ordinal"
+            )
             transformed[self.contract_output_column] = (
                 transformed[self.contract_column]
                 .map(self.contract_mapping)
@@ -191,12 +197,8 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
                 "add_fiber_no_support",
             )
             transformed[self.fiber_output_column] = (
-                (
-                    transformed[self.internet_service_column] == self.fiber_value
-                )
-                & (
-                    transformed[self.tech_support_column] == self.no_support_value
-                )
+                (transformed[self.internet_service_column] == self.fiber_value)
+                & (transformed[self.tech_support_column] == self.no_support_value)
             ).astype(int)
 
         if self.add_support_gap_count:
@@ -217,8 +219,9 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
                 "add_payment_automatic_flag",
             )
             transformed[self.payment_automatic_output_column] = (
-                transformed[self.payment_method_column]
-                .isin(self.automatic_payment_values)
+                transformed[self.payment_method_column].isin(
+                    self.automatic_payment_values
+                )
             ).astype(int)
 
         if self.add_electronic_check_flag:
@@ -254,9 +257,8 @@ class FeatureEngineerTransformer(BaseEstimator, TransformerMixin):
                 [self.monthly_charges_column, self.tenure_column],
                 "add_price_pressure_ratio",
             )
-            transformed[self.price_pressure_output_column] = (
-                transformed[self.monthly_charges_column]
-                / (transformed[self.tenure_column] + 1)
-            )
+            transformed[self.price_pressure_output_column] = transformed[
+                self.monthly_charges_column
+            ] / (transformed[self.tenure_column] + 1)
 
         return transformed

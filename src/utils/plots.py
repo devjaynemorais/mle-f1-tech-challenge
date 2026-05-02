@@ -10,7 +10,6 @@ from scipy import stats
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     ConfusionMatrixDisplay,
-    auc,
     average_precision_score,
     confusion_matrix,
     precision_recall_curve,
@@ -187,7 +186,9 @@ def plot_random_search_boxplots(
         ax.tick_params(axis="x", rotation=30)
 
     _hide_unused_axes(axes, len(params))
-    fig.suptitle(f"Distribuicao de {metric} por hiperparametro", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"Distribuicao de {metric} por hiperparametro", fontsize=14, fontweight="bold"
+    )
     return _finalize_figure(fig, show)
 
 
@@ -238,7 +239,7 @@ def plot_random_search_heatmap(
     cmap: str = "YlGnBu",
     show: bool = True,
 ) -> plt.Figure:
-    """Plota heatmap de interacao entre dois hiperparametros com mascara por suporte minimo."""
+    """Plota heatmap de interacao entre dois hiperparametros com mascara por suporte."""
     pivot_values = interaction_df.pivot(index=y_col, columns=x_col, values=value_col)
     pivot_counts = interaction_df.pivot(index=y_col, columns=x_col, values=count_col)
     mask = pivot_counts.fillna(0) < min_count
@@ -253,7 +254,9 @@ def plot_random_search_heatmap(
         cbar=True,
         ax=ax,
     )
-    ax.set_title(title or f"{value_col} por {y_col} x {x_col}", fontsize=12, fontweight="bold")
+    ax.set_title(
+        title or f"{value_col} por {y_col} x {x_col}", fontsize=12, fontweight="bold"
+    )
     ax.set_xlabel(x_col)
     ax.set_ylabel(y_col)
     return _finalize_figure(fig, show)
@@ -316,7 +319,13 @@ def plot_pr_curves_grid(
         y_prob = oof_df["proba"].to_numpy(dtype=float)
         precision, recall, _ = precision_recall_curve(y_true, y_prob)
         pr_auc = average_precision_score(y_true, y_prob)
-        ax.plot(recall, precision, color="darkorange", linewidth=2, label=f"AP = {pr_auc:.4f}")
+        ax.plot(
+            recall,
+            precision,
+            color="darkorange",
+            linewidth=2,
+            label=f"AP = {pr_auc:.4f}",
+        )
         ax.set_title(model_name, fontsize=11, fontweight="bold")
         ax.set_xlabel("Recall")
         ax.set_ylabel("Precision")
@@ -403,9 +412,20 @@ def plot_calibration_curves_grid(
     for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
         y_true = oof_df["y_true"].to_numpy(dtype=int)
         y_prob = oof_df["proba"].to_numpy(dtype=float)
-        frac_pos, mean_pred = calibration_curve(y_true, y_prob, n_bins=n_bins, strategy="uniform")
-        ax.plot(mean_pred, frac_pos, marker="o", color="steelblue", linewidth=2, label="Modelo")
-        ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1, label="Ideal")
+        frac_pos, mean_pred = calibration_curve(
+            y_true, y_prob, n_bins=n_bins, strategy="uniform"
+        )
+        ax.plot(
+            mean_pred,
+            frac_pos,
+            marker="o",
+            color="steelblue",
+            linewidth=2,
+            label="Modelo",
+        )
+        ax.plot(
+            [0, 1], [0, 1], linestyle="--", color="gray", linewidth=1, label="Ideal"
+        )
         ax.set_title(model_name, fontsize=11, fontweight="bold")
         ax.set_xlabel("Probabilidade média prevista")
         ax.set_ylabel("Fração observada de churn")
@@ -434,7 +454,9 @@ def plot_probability_histograms_grid(
         ax.set_ylabel("Frequência")
 
     _hide_unused_axes(axes, len(oof_predictions))
-    fig.suptitle("Histograma de Probabilidades por Modelo", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        "Histograma de Probabilidades por Modelo", fontsize=14, fontweight="bold"
+    )
     return _finalize_figure(fig, show)
 
 
@@ -446,11 +468,15 @@ def plot_roi_by_threshold(
     """Plota a curva de ROI por threshold."""
     sns.set_style("whitegrid")
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    sns.lineplot(data=threshold_df, x="threshold", y="roi", marker="o", ax=ax, color="steelblue")
+    sns.lineplot(
+        data=threshold_df, x="threshold", y="roi", marker="o", ax=ax, color="steelblue"
+    )
     best_idx = threshold_df["roi"].astype(float).idxmax()
     best_row = threshold_df.loc[best_idx]
     ax.axvline(best_row["threshold"], linestyle="--", color="darkorange", linewidth=1.5)
-    ax.scatter([best_row["threshold"]], [best_row["roi"]], color="darkorange", s=60, zorder=3)
+    ax.scatter(
+        [best_row["threshold"]], [best_row["roi"]], color="darkorange", s=60, zorder=3
+    )
     ax.set_title("ROI por Threshold", fontsize=12, fontweight="bold")
     ax.set_xlabel("Threshold")
     ax.set_ylabel("ROI")
@@ -510,7 +536,11 @@ def plot_roi_heatmap(
     show: bool = True,
 ) -> plt.Figure:
     """Plota heatmap de ROI por custo de campanha e retencao."""
-    cost_column = "activation_cost" if "activation_cost" in roi_grid_df.columns else "campaign_cost"
+    cost_column = (
+        "activation_cost"
+        if "activation_cost" in roi_grid_df.columns
+        else "campaign_cost"
+    )
     pivot = roi_grid_df.pivot(index="retention_rate", columns=cost_column, values="roi")
     fig, ax = plt.subplots(figsize=(8, 5))
     sns.heatmap(
@@ -523,7 +553,11 @@ def plot_roi_heatmap(
         ax=ax,
     )
     ax.set_title("Heatmap de ROI por Custo e Retencao", fontsize=12, fontweight="bold")
-    ax.set_xlabel("Custo por acionamento" if cost_column == "activation_cost" else "Custo de campanha")
+    ax.set_xlabel(
+        "Custo por acionamento"
+        if cost_column == "activation_cost"
+        else "Custo de campanha"
+    )
     ax.set_ylabel("Taxa de retencao")
     return _finalize_figure(fig, show)
 
@@ -557,7 +591,9 @@ def plot_holdout_pr_roc_subplot(
 
     precision, recall, _ = precision_recall_curve(y_true_arr, y_prob_arr)
     pr_auc = average_precision_score(y_true_arr, y_prob_arr)
-    axes[0].plot(recall, precision, color="darkorange", linewidth=2, label=f"AP = {pr_auc:.4f}")
+    axes[0].plot(
+        recall, precision, color="darkorange", linewidth=2, label=f"AP = {pr_auc:.4f}"
+    )
     axes[0].set_title(f"{title} - PR", fontsize=11, fontweight="bold")
     axes[0].set_xlabel("Recall")
     axes[0].set_ylabel("Precision")
@@ -584,7 +620,9 @@ def plot_single_probability_histogram(
 ) -> plt.Figure:
     """Plota histograma simples das probabilidades do holdout."""
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    sns.histplot(np.asarray(y_prob, dtype=float), bins=bins, kde=False, color="steelblue", ax=ax)
+    sns.histplot(
+        np.asarray(y_prob, dtype=float), bins=bins, kde=False, color="steelblue", ax=ax
+    )
     ax.set_title(title, fontsize=11, fontweight="bold")
     ax.set_xlabel("Probabilidade prevista")
     ax.set_ylabel("Frequencia")
@@ -601,8 +639,12 @@ def plot_fairness_feature_subplot(
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
     sns.set_style("whitegrid")
 
-    sns.barplot(data=by_group_df, x="group", y="selection_rate", ax=axes[0], color="steelblue")
-    axes[0].set_title(f"{feature_name} - Selection Rate", fontsize=11, fontweight="bold")
+    sns.barplot(
+        data=by_group_df, x="group", y="selection_rate", ax=axes[0], color="steelblue"
+    )
+    axes[0].set_title(
+        f"{feature_name} - Selection Rate", fontsize=11, fontweight="bold"
+    )
     axes[0].set_xlabel("Grupo")
     axes[0].set_ylabel("Selection Rate")
 
@@ -613,7 +655,9 @@ def plot_fairness_feature_subplot(
         value_name="value",
     )
     sns.barplot(data=metrics_long, x="group", y="value", hue="metric", ax=axes[1])
-    axes[1].set_title(f"{feature_name} - Recall / Precision / F1", fontsize=11, fontweight="bold")
+    axes[1].set_title(
+        f"{feature_name} - Recall / Precision / F1", fontsize=11, fontweight="bold"
+    )
     axes[1].set_xlabel("Grupo")
     axes[1].set_ylabel("Valor")
     axes[1].legend(title="Metrica", loc="best")
@@ -644,7 +688,9 @@ def plot_shap_summary_subplot(
     """Plota SHAP summary dot e bar lado a lado."""
     try:
         import shap
-    except ModuleNotFoundError as exc:  # pragma: no cover - depende do ambiente do usuario
+    except (
+        ModuleNotFoundError
+    ) as exc:  # pragma: no cover - depende do ambiente do usuario
         raise ModuleNotFoundError(
             "shap nao esta instalado no ambiente atual. "
             "Instale a dependencia no kernel do notebook para gerar os plots SHAP."
@@ -672,3 +718,46 @@ def plot_shap_summary_subplot(
     axes[1].set_title("SHAP Summary Bar", fontsize=11, fontweight="bold")
     fig.suptitle("Explicabilidade SHAP - MLP Optuna", fontsize=14, fontweight="bold")
     return _finalize_figure(fig, show)
+
+
+def plot_shap_summary_figures(
+    shap_values: np.ndarray,
+    transformed_values: np.ndarray,
+    feature_names: list[str],
+    *,
+    show: bool = True,
+) -> tuple[plt.Figure, plt.Figure]:
+    """Gera dot e bar SHAP summary como figuras separadas para logging no MLflow."""
+    try:
+        import shap
+    except ModuleNotFoundError as exc:  # pragma: no cover
+        raise ModuleNotFoundError(
+            "shap nao esta instalado no ambiente atual. "
+            "Instale a dependencia no kernel do notebook para gerar os plots SHAP."
+        ) from exc
+
+    dot_fig = plt.figure(figsize=(8, 5))
+    plt.sca(dot_fig.add_subplot(111))
+    shap.summary_plot(
+        shap_values,
+        transformed_values,
+        feature_names=feature_names,
+        show=False,
+        plot_type="dot",
+    )
+    plt.title("SHAP Summary Dot", fontsize=11, fontweight="bold")
+    dot_fig = _finalize_figure(plt.gcf(), show)
+
+    bar_fig = plt.figure(figsize=(8, 5))
+    plt.sca(bar_fig.add_subplot(111))
+    shap.summary_plot(
+        shap_values,
+        transformed_values,
+        feature_names=feature_names,
+        show=False,
+        plot_type="bar",
+    )
+    plt.title("SHAP Summary Bar", fontsize=11, fontweight="bold")
+    bar_fig = _finalize_figure(plt.gcf(), show)
+
+    return dot_fig, bar_fig
