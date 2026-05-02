@@ -37,6 +37,8 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 ## ⚡ Início Rápido
 
+> **Referência granular** — lista todos os comandos disponíveis individualmente, para quem quiser executar etapas isoladas. Para rodar o pipeline completo do zero, siga a seção [⚠️ Para Rodar o Pipeline Completo](#️-para-rodar-o-pipeline-completo) acima.
+
 ### Local
 
 ```bash
