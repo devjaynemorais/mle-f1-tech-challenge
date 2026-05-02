@@ -1,4 +1,4 @@
-# Model Card — Churn Prediction MLP
+# Model Card - Churn Prediction MLP
 
 ## Descrição do Modelo
 
@@ -6,7 +6,7 @@
 **Versão:** 1.0.0  
 **Tipo:** Classificação binária (churn = 1 / não-churn = 0)  
 **Framework:** PyTorch + Scikit-Learn (pré-processamento)  
-**Arquitetura:** Linear(input → 64) → ReLU → Linear(64 → 1) + BCEWithLogitsLoss
+**Arquitetura:** Linear(input -> 64) -> ReLU -> Linear(64 -> 1) + BCEWithLogitsLoss
 
 ---
 
@@ -34,17 +34,48 @@ Avaliadas no conjunto de teste (30% dos dados, estratificado):
 | AUC-ROC | 0.8519 |
 | Overfitting (recall) | 3.2% |
 
-**Early stopping:** treinamento encerrado automaticamente ao detectar ausência de melhora na val_loss (patience=10).
+**Early stopping:** treinamento encerrado automaticamente ao detectar ausência de melhora na `val_loss` (`patience=10`).
+
+---
+
+## Ablação Econômica
+
+Durante a etapa de consolidação do notebook 03, foi testada uma ablação econômica com ponderação do treino por `CLTV` via `sample_weight`, com o objetivo de aproximar o objetivo estatístico do objetivo financeiro da campanha de retenção.
+
+O teste foi conduzido no mesmo protocolo de desenvolvimento usado para a comparação técnica, utilizando probabilidades `OOF` e comparando dois cenários:
+
+- `p` puro, sem ponderação por `CLTV`
+- `p` ponderado por `CLTV` no treino
+
+Embora a hipótese fosse conceitualmente promissora, a ponderação não foi suficiente para produzir melhora consistente no cenário testado. Para a `MLP Optuna`, que permaneceu como modelo de referência para o MVP, o cenário ponderado reduziu os indicadores econômicos principais em relação ao cenário puro.
+
+No cenário sem ponderação, a `MLP Optuna` apresentou:
+
+- `IEL = 329343.52`
+- `ROI = 2.52`
+
+No cenário com `sample_weight=CLTV`, a `MLP Optuna` passou a apresentar:
+
+- `IEL = 316294.62`
+- `ROI = 2.39`
+
+A leitura dominante foi de piora por aumento do custo de omissão. Houve leve melhora operacional em falsos positivos e desperdício de campanha, mas esse ganho não compensou o aumento de falsos negativos economicamente relevantes.
+
+Como conclusão metodológica:
+
+> A ponderação do treino por `CLTV` foi testada como aproximação entre objetivo estatístico e objetivo econômico, mas não trouxe ganho para a `MLP Optuna`, elevando o custo de omissão (`VP`) e reduzindo o retorno final da estratégia.
+
+Por isso, o modelo candidato ao MVP foi mantido com o cenário `p` puro como referência principal, e o teste ponderado passou a ser tratado como ablação econômica documentada, não como configuração final de treinamento.
 
 ---
 
 ## Dados de Treinamento
 
-**Dataset:** Telco Customer Churn — IBM (`data/raw/Telco_customer_churn.xlsx`)  
+**Dataset:** Telco Customer Churn - IBM (`data/raw/Telco_customer_churn.xlsx`)  
 **Tamanho:** 7.043 registros  
 **Features:** 20 variáveis (16 categóricas + 4 numéricas)  
 **Período:** Dados históricos de clientes de uma operadora de telecom dos EUA  
-**Balanceamento:** ~26% de churners — classe positiva ponderada com `pos_weight` no treinamento
+**Balanceamento:** ~26% de churners - classe positiva ponderada com `pos_weight` no treinamento
 
 ---
 
@@ -53,15 +84,15 @@ Avaliadas no conjunto de teste (30% dos dados, estratificado):
 1. **Distribuição geográfica:** o dataset representa clientes de uma única operadora americana. Pode não generalizar para outros mercados sem retreinamento.
 2. **Deriva temporal:** o modelo não é atualizado automaticamente. Se o comportamento de churn mudar ao longo do tempo, a performance pode degradar.
 3. **Variáveis ausentes:** não inclui histórico de interações com suporte, NPS ou dados de uso detalhados, que poderiam melhorar a predição.
-4. **Threshold fixo:** o threshold de 0.5 não foi otimizado para o custo de negócio. Dependendo do custo de falsos negativos vs. falsos positivos, pode ser necessário ajustá-lo.
-5. **CLTV como feature:** o CLTV é usado como feature de entrada, mas é em si uma estimativa. Erros no CLTV se propagam para a predição.
+4. **Threshold fixo:** o threshold de `0.5` não foi otimizado para o custo de negócio. Dependendo do custo de falsos negativos vs. falsos positivos, pode ser necessário ajustá-lo.
+5. **CLTV como feature:** o `CLTV` é usado como feature de entrada, mas é em si uma estimativa. Erros no `CLTV` se propagam para a predição.
 
 ---
 
 ## Vieses Conhecidos
 
 - **Gênero:** o modelo inclui `Gender` como feature. Testes de fairness não foram conduzidos formalmente. Recomenda-se avaliar paridade de performance entre grupos demográficos antes de uso em decisões de alto impacto.
-- **Contrato:** clientes Month-to-month têm taxa de churn muito maior. O modelo pode superestimar risco para novos clientes nessa modalidade sem histórico suficiente.
+- **Contrato:** clientes `Month-to-month` têm taxa de churn muito maior. O modelo pode superestimar risco para novos clientes nessa modalidade sem histórico suficiente.
 - **Senior Citizen:** grupo minoritário no dataset; a performance pode ser menor neste segmento.
 
 ---
@@ -91,14 +122,14 @@ Avaliadas no conjunto de teste (30% dos dados, estratificado):
 
 ### Playbook de resposta
 
-1. **Degradação de AUC > 5%:** inspecionar distribuição de features, verificar deriva → retreinar se confirmado
-2. **Erro 5xx > 1%:** verificar logs de `src/api/main.py`, checar se modelo existe em `models/`
+1. **Degradação de AUC > 5%:** inspecionar distribuição de features, verificar deriva -> retreinar se confirmado
+2. **Erro 5xx > 1%:** verificar logs de `src/api/main.py`, checar se o modelo existe em `models/`
 3. **Latência alta:** verificar tamanho do batch enviado, avaliar escalabilidade horizontal
 
 ---
 
 ## Informações Técnicas
 
-- **Repositório:** POS MLE — Tech Challenge Fase 1
+- **Repositório:** POS MLE - Tech Challenge Fase 1
 - **Última atualização do modelo:** 2026-04-25
 - **Contato:** devmoraislacerda@gmail.com

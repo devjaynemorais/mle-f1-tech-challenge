@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import inspect
+import json
+from pathlib import Path
+import tempfile
 from typing import Any
 
 import copy
 
+import mlflow
 import numpy as np
 import pandas as pd
 import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from mlflow.tracking import MlflowClient
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
+from sklearn.compose import ColumnTransformer, make_column_selector
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_validate, train_test_split
+from sklearn.metrics import brier_score_loss
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
@@ -32,6 +42,767 @@ from src.features.geo_transformer import GeoTransformer
 from src.models.mlp import CityEmbeddingMLP, DEFAULT_DEVICE, MLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")
+DEFAULT_METADATA_COLUMNS = ("CLTV", "CustomerID")
+DEFAULT_BASELINE_FE_PARAMS = {
+    "drop_churn_score": True,
+    "add_engagement_score": False,
+    "add_tenure_group": False,
+    "add_tenure_log": False,
+    "add_contract_ordinal": False,
+    "add_family_stability": False,
+    "add_fiber_no_support": False,
+    "add_support_gap_count": False,
+    "add_payment_automatic_flag": False,
+    "add_electronic_check_flag": False,
+    "add_paperless_echeck_flag": False,
+    "add_price_pressure_ratio": False,
+}
+DEFAULT_ROUND4_FE_PARAMS = {
+    "drop_churn_score": False,
+    "add_engagement_score": True,
+    "add_tenure_group": True,
+    "add_tenure_log": True,
+    "add_contract_ordinal": True,
+    "add_family_stability": True,
+    "add_fiber_no_support": True,
+    "add_support_gap_count": True,
+    "add_payment_automatic_flag": True,
+    "add_electronic_check_flag": True,
+    "add_paperless_echeck_flag": True,
+    "add_price_pressure_ratio": True,
+}
+
+
+def resolve_tracking_uri(tracking_uri: str, workspace_root: str | Path | None = None) -> str:
+    """Resolve URIs locais do MLflow para caminhos absolutos quando necessário."""
+    if tracking_uri.startswith("sqlite:///") and workspace_root is not None:
+        db_name = tracking_uri.replace("sqlite:///", "", 1)
+        db_path = Path(workspace_root) / db_name
+        return f"sqlite:///{db_path.as_posix()}"
+    return tracking_uri
+
+
+def set_mlflow_tracking(
+    tracking_uri: str,
+    *,
+    workspace_root: str | Path | None = None,
+) -> MlflowClient:
+    """Configura a URI de tracking e devolve um cliente do MLflow."""
+    mlflow.set_tracking_uri(resolve_tracking_uri(tracking_uri, workspace_root))
+    return MlflowClient()
+
+
+def build_default_preprocessor() -> ColumnTransformer:
+    """Cria o pre-processador padrao usado nos notebooks de experimentacao."""
+    ohe = OneHotEncoder(handle_unknown="ignore")
+    return ColumnTransformer(
+        transformers=[
+            ("cat", ohe, make_column_selector(dtype_include=["object", "category"])),
+            ("num", "passthrough", make_column_selector(dtype_exclude=["object", "category"])),
+        ],
+        remainder="drop",
+    )
+
+
+def build_default_cv(
+    n_splits: int = 10,
+    shuffle: bool = True,
+    random_state: int = 42,
+):
+    """Cria um StratifiedKFold padrao."""
+    from sklearn.model_selection import StratifiedKFold
+
+    return StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=shuffle,
+        random_state=random_state,
+    )
+
+
+def build_default_scoring() -> dict[str, str]:
+    """Pacote padrao de metricas usado na comparacao tecnica."""
+    return {
+        "pr_auc": "average_precision",
+        "roc_auc": "roc_auc",
+        "recall": "recall",
+        "precision": "precision",
+        "f1": "f1",
+    }
+
+
+def artifact_uri_to_local_path(
+    artifact_uri: str,
+    workspace_root: str | Path,
+    artifact_name: str | None = None,
+) -> Path:
+    """Converte artifact_uri do MLflow para caminho local no workspace."""
+    workspace_path = Path(workspace_root)
+
+    if artifact_uri.startswith("mlflow-artifacts:/"):
+        relative = artifact_uri.replace("mlflow-artifacts:/", "", 1).strip("/")
+        base_path = workspace_path / "mlartifacts" / Path(relative)
+    elif artifact_uri.startswith("file://"):
+        base_path = Path(artifact_uri.replace("file://", "", 1))
+    else:
+        base_path = Path(artifact_uri)
+        if not base_path.is_absolute():
+            base_path = workspace_path / base_path
+
+    return base_path / artifact_name if artifact_name else base_path
+
+
+def find_run_by_name(
+    client: MlflowClient,
+    experiment_name: str,
+    run_name: str,
+    *,
+    tags: dict[str, Any] | None = None,
+) -> Any:
+    """Localiza uma run pelo nome e opcionalmente por tags."""
+    experiment = client.get_experiment_by_name(experiment_name)
+    if experiment is None:
+        raise RuntimeError(f"Experimento do MLflow nao encontrado: {experiment_name}")
+
+    runs = client.search_runs(
+        [experiment.experiment_id],
+        filter_string=f"attributes.run_name = '{run_name}'",
+        order_by=["attributes.start_time DESC"],
+        max_results=50,
+    )
+
+    for run in runs:
+        if tags is None:
+            return run
+        if all(str(run.data.tags.get(key)) == str(value) for key, value in tags.items()):
+            return run
+
+    raise RuntimeError(
+        f"Run '{run_name}' nao encontrada no experimento '{experiment_name}'"
+        + (f" com tags {tags}" if tags else "")
+    )
+
+
+def resolve_notebook03_runs(
+    client: MlflowClient,
+    *,
+    baseline_experiment: str = "tc-f1-nb02-baselines",
+    baseline_parent_run_name: str = "baseline_inicial",
+    tuning_experiment: str = "tc-f1-nb02-tuning-stage2-optuna",
+) -> dict[str, Any]:
+    """Resolve as runs necessarias para a comparacao do notebook 03."""
+    baseline_parent = find_run_by_name(
+        client,
+        baseline_experiment,
+        baseline_parent_run_name,
+        tags={"phase": "baseline_inicial"},
+    )
+    baseline_experiment_id = client.get_experiment_by_name(baseline_experiment).experiment_id
+    child_runs = client.search_runs(
+        [baseline_experiment_id],
+        filter_string=f"tags.mlflow.parentRunId = '{baseline_parent.info.run_id}'",
+        max_results=100,
+    )
+    child_by_model = {
+        run.data.tags.get("model_name") or run.data.tags.get("mlflow.runName"): run
+        for run in child_runs
+    }
+
+    return {
+        "baseline_parent": baseline_parent,
+        "logistic_baseline": child_by_model["LogisticRegression"],
+        "mlp_baseline": child_by_model["MLP"],
+        "mlp_optuna": find_run_by_name(
+            client,
+            tuning_experiment,
+            "optuna_mlp",
+            tags={"phase": "tuning_stage2", "model_name": "MLP"},
+        ),
+        "xgb_optuna": find_run_by_name(
+            client,
+            tuning_experiment,
+            "optuna_xgboost",
+            tags={"phase": "tuning_stage2", "model_name": "XGBoost"},
+        ),
+    }
+
+
+def load_run_csv_artifact(
+    run: Any,
+    artifact_name: str,
+    *,
+    workspace_root: str | Path,
+) -> pd.DataFrame:
+    """Le um artefato tabular CSV diretamente do diretório local de artefatos."""
+    artifact_path = artifact_uri_to_local_path(
+        run.info.artifact_uri,
+        workspace_root=workspace_root,
+        artifact_name=artifact_name,
+    )
+    return pd.read_csv(artifact_path)
+
+
+def load_run_json_artifact(
+    run: Any,
+    artifact_name: str,
+    *,
+    workspace_root: str | Path,
+) -> dict[str, Any]:
+    """Le um artefato JSON diretamente do diretório local de artefatos."""
+    artifact_path = artifact_uri_to_local_path(
+        run.info.artifact_uri,
+        workspace_root=workspace_root,
+        artifact_name=artifact_name,
+    )
+    with artifact_path.open(encoding="utf-8") as fp:
+        return json.load(fp)
+
+
+def rebuild_train_val_test_splits(
+    df: pd.DataFrame,
+    *,
+    target_column: str,
+    train_val_idx: Sequence[int],
+    test_idx: Sequence[int],
+    metadata_columns: Sequence[str] = DEFAULT_METADATA_COLUMNS,
+) -> dict[str, Any]:
+    """Reconstrói train_val, holdout e metadata a partir dos índices salvos."""
+    train_val_index = pd.Index(train_val_idx, name="index")
+    test_index = pd.Index(test_idx, name="index")
+
+    feature_columns = [
+        col for col in df.columns if col not in {target_column, *metadata_columns}
+    ]
+
+    X = df.loc[:, feature_columns]
+    y = df.loc[:, target_column]
+    metadata = df.loc[:, list(metadata_columns)]
+
+    return {
+        "X_train_val": X.loc[train_val_index].copy(),
+        "y_train_val": y.loc[train_val_index].copy(),
+        "X_test": X.loc[test_index].copy(),
+        "y_test": y.loc[test_index].copy(),
+        "metadata_train_val": metadata.loc[train_val_index].copy(),
+        "metadata_test": metadata.loc[test_index].copy(),
+    }
+
+
+def load_split_bundle_from_mlflow(
+    *,
+    client: MlflowClient,
+    workspace_root: str | Path,
+    data_path: str | Path,
+    target_column: str,
+    metadata_columns: Sequence[str] = DEFAULT_METADATA_COLUMNS,
+    baseline_experiment: str = "tc-f1-nb02-baselines",
+    baseline_parent_run_name: str = "baseline_inicial",
+) -> dict[str, Any]:
+    """Recupera os splits logados no notebook 02 e reconstrói as bases."""
+    baseline_parent = find_run_by_name(
+        client,
+        baseline_experiment,
+        baseline_parent_run_name,
+        tags={"phase": "baseline_inicial"},
+    )
+    train_val_idx_df = load_run_csv_artifact(
+        baseline_parent,
+        "train_val_indices.csv",
+        workspace_root=workspace_root,
+    )
+    test_idx_df = load_run_csv_artifact(
+        baseline_parent,
+        "test_indices.csv",
+        workspace_root=workspace_root,
+    )
+    df = pd.read_csv(data_path)
+    return rebuild_train_val_test_splits(
+        df=df,
+        target_column=target_column,
+        train_val_idx=train_val_idx_df["idx"].tolist(),
+        test_idx=test_idx_df["idx"].tolist(),
+        metadata_columns=metadata_columns,
+    )
+
+
+def _bool_param(params: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = params.get(key, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() == "true"
+
+
+def _int_param(params: dict[str, Any], key: str, default: int) -> int:
+    return int(float(params.get(key, default)))
+
+
+def _float_param(params: dict[str, Any], key: str, default: float) -> float:
+    return float(params.get(key, default))
+
+
+def _str_param(params: dict[str, Any], key: str, default: str) -> str:
+    return str(params.get(key, default))
+
+
+def build_baseline_logistic_pipeline(run_params: dict[str, Any] | None = None) -> Pipeline:
+    """Reconstrói o baseline inicial da regressão logística."""
+    run_params = run_params or {}
+    logistic_params = {
+        "max_iter": _int_param(run_params, "max_iter", 1000),
+        "class_weight": _str_param(run_params, "class_weight", "balanced"),
+        "random_state": _int_param(run_params, "random_state", 42),
+        "C": _float_param(run_params, "C", 1.0),
+    }
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**DEFAULT_BASELINE_FE_PARAMS)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", build_default_preprocessor()),
+            ("scaler", StandardScaler(with_mean=False)),
+            ("model", LogisticRegression(**logistic_params)),
+        ]
+    )
+
+
+def build_baseline_mlp_pipeline(run_params: dict[str, Any] | None = None) -> Pipeline:
+    """Reconstrói o baseline inicial da MLP."""
+    run_params = run_params or {}
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**DEFAULT_BASELINE_FE_PARAMS)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", build_default_preprocessor()),
+            ("scaler", StandardScaler(with_mean=False)),
+            (
+                "model",
+                MLPClassifierWrapper(
+                    hidden_dim=_int_param(run_params, "hidden_dim", 64),
+                    output_dim=_int_param(run_params, "output_dim", 1),
+                    activation=_str_param(run_params, "activation", "relu"),
+                    batch_size=_int_param(run_params, "batch_size", 64),
+                    lr=_float_param(run_params, "lr", 1e-3),
+                    weight_decay=_float_param(run_params, "weight_decay", 1e-5),
+                    dropout=_float_param(run_params, "dropout", 0.0),
+                    max_epochs=_int_param(run_params, "max_epochs", 80),
+                    patience=_int_param(run_params, "patience", 8),
+                    min_delta=_float_param(run_params, "min_delta", 1e-3),
+                    val_size=_float_param(run_params, "val_size", 0.15),
+                    threshold=_float_param(run_params, "threshold", 0.5),
+                    random_state=_int_param(run_params, "random_state", 42),
+                    normalize_sample_weight_flag=_bool_param(
+                        run_params, "normalize_sample_weight_flag", True
+                    ),
+                    verbose=_bool_param(run_params, "verbose", False),
+                ),
+            ),
+        ]
+    )
+
+
+def build_optuna_mlp_pipeline(optuna_params: dict[str, Any]) -> Pipeline:
+    """Reconstrói a MLP vencedora do Optuna."""
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**DEFAULT_ROUND4_FE_PARAMS)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", build_default_preprocessor()),
+            (
+                "selector",
+                SelectKBest(
+                    score_func=f_classif,
+                    k=int(optuna_params["selector__k"]),
+                ),
+            ),
+            ("scaler", StandardScaler(with_mean=False)),
+            (
+                "model",
+                MLPClassifierWrapper(
+                    output_dim=1,
+                    activation=str(optuna_params["model__activation"]),
+                    hidden_dim=int(optuna_params["model__hidden_dim"]),
+                    dropout=float(optuna_params["model__dropout"]),
+                    lr=float(optuna_params["model__lr"]),
+                    weight_decay=float(optuna_params["model__weight_decay"]),
+                    batch_size=int(optuna_params["model__batch_size"]),
+                    max_epochs=80,
+                    patience=16,
+                    min_delta=1e-3,
+                    threshold=0.5,
+                    val_size=0.15,
+                    random_state=42,
+                    verbose=False,
+                ),
+            ),
+        ]
+    )
+
+
+def build_optuna_xgb_pipeline(
+    optuna_params: dict[str, Any],
+    *,
+    y_reference: Any,
+) -> Pipeline:
+    """Reconstrói o XGBoost vencedor do Optuna."""
+    xgb_classifier = require_xgboost()
+    y_arr = np.asarray(y_reference)
+    scale_pos_weight = float((y_arr == 0).sum()) / max(float((y_arr == 1).sum()), 1.0)
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**DEFAULT_ROUND4_FE_PARAMS)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", build_default_preprocessor()),
+            (
+                "model",
+                xgb_classifier(
+                    objective="binary:logistic",
+                    eval_metric="logloss",
+                    random_state=42,
+                    n_jobs=-1,
+                    scale_pos_weight=scale_pos_weight,
+                    n_estimators=int(optuna_params["model__n_estimators"]),
+                    max_depth=int(optuna_params["model__max_depth"]),
+                    learning_rate=float(optuna_params["model__learning_rate"]),
+                    min_child_weight=int(optuna_params["model__min_child_weight"]),
+                    subsample=float(optuna_params["model__subsample"]),
+                    colsample_bytree=float(optuna_params["model__colsample_bytree"]),
+                    gamma=float(optuna_params["model__gamma"]),
+                    reg_alpha=float(optuna_params["model__reg_alpha"]),
+                    reg_lambda=float(optuna_params["model__reg_lambda"]),
+                ),
+            ),
+        ]
+    )
+
+
+def build_notebook03_estimators(
+    run_registry: dict[str, Any],
+    *,
+    workspace_root: str | Path,
+    y_reference: Any,
+) -> dict[str, Any]:
+    """Reconstrói os quatro modelos comparados no notebook 03."""
+    mlp_optuna_params = load_run_json_artifact(
+        run_registry["mlp_optuna"],
+        "best_mlp_optuna_params.json",
+        workspace_root=workspace_root,
+    )
+    xgb_optuna_params = load_run_json_artifact(
+        run_registry["xgb_optuna"],
+        "best_xgb_optuna_params.json",
+        workspace_root=workspace_root,
+    )
+    return {
+        "LogisticRegression": build_baseline_logistic_pipeline(
+            run_registry["logistic_baseline"].data.params
+        ),
+        "MLP": build_baseline_mlp_pipeline(run_registry["mlp_baseline"].data.params),
+        "MLP Optuna": build_optuna_mlp_pipeline(mlp_optuna_params),
+        "XGBoost Optuna": build_optuna_xgb_pipeline(
+            xgb_optuna_params,
+            y_reference=y_reference,
+        ),
+    }
+
+
+def _fit_params_for_estimator(estimator: Any, sample_weight: Any | None) -> dict[str, Any]:
+    """Monta fit_params seguros para estimadores e pipelines com sample_weight."""
+    if sample_weight is None:
+        return {}
+
+    if isinstance(estimator, Pipeline):
+        final_step_name, final_estimator = estimator.steps[-1]
+        if "sample_weight" in inspect.signature(final_estimator.fit).parameters:
+            return {f"{final_step_name}__sample_weight": sample_weight}
+        return {}
+
+    if "sample_weight" in inspect.signature(estimator.fit).parameters:
+        return {"sample_weight": sample_weight}
+    return {}
+
+
+def generate_oof_predictions(
+    *,
+    estimator: Any,
+    X: Any,
+    y: Any,
+    cv: Any,
+    sample_weight: Any | None = None,
+    model_name: str | None = None,
+) -> pd.DataFrame:
+    """Gera probabilidades OOF para um estimador."""
+    y_series = y if isinstance(y, pd.Series) else pd.Series(y, index=getattr(X, "index", None))
+    if hasattr(X, "index"):
+        index_values = pd.Index(X.index)
+    else:
+        index_values = pd.Index(np.arange(len(y_series)))
+
+    fold_frames: list[pd.DataFrame] = []
+    for fold_number, (train_idx, valid_idx) in enumerate(cv.split(X, y_series), start=1):
+        estimator_fold = clone(estimator)
+        X_train = rows(X, train_idx)
+        X_valid = rows(X, valid_idx)
+        y_train = rows(y_series, train_idx)
+        y_valid = rows(y_series, valid_idx)
+        fit_params = _fit_params_for_estimator(
+            estimator_fold,
+            None if sample_weight is None else rows(sample_weight, train_idx),
+        )
+        estimator_fold.fit(X_train, y_train, **fit_params)
+
+        if hasattr(estimator_fold, "predict_proba"):
+            proba = estimator_fold.predict_proba(X_valid)[:, 1]
+        else:
+            decision = estimator_fold.decision_function(X_valid)
+            proba = 1.0 / (1.0 + np.exp(-np.asarray(decision, dtype=float)))
+
+        fold_frames.append(
+            pd.DataFrame(
+                {
+                    "row_index": index_values[valid_idx].to_numpy(),
+                    "fold": fold_number,
+                    "y_true": np.asarray(y_valid, dtype=int),
+                    "proba": np.asarray(proba, dtype=float),
+                    "pred_0_5": (np.asarray(proba, dtype=float) >= 0.5).astype(int),
+                    "model": model_name,
+                }
+            )
+        )
+
+    return (
+        pd.concat(fold_frames, ignore_index=True)
+        .sort_values("row_index")
+        .reset_index(drop=True)
+    )
+
+
+def generate_oof_predictions_by_model(
+    models: dict[str, Any],
+    *,
+    X: Any,
+    y: Any,
+    cv: Any,
+    sample_weight: Any | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Gera um dicionário model_name -> DataFrame de probabilidades OOF."""
+    return {
+        model_name: generate_oof_predictions(
+            estimator=estimator,
+            X=X,
+            y=y,
+            cv=cv,
+            sample_weight=sample_weight,
+            model_name=model_name,
+        )
+        for model_name, estimator in models.items()
+    }
+
+
+def compute_generalization_gap_pct(train_score: float, valid_score: float) -> float:
+    """Calcula o gap percentual conforme convenção do notebook."""
+    train_value = float(train_score)
+    valid_value = float(valid_score)
+    if np.isclose(valid_value, 0.0):
+        return np.nan
+    return (1.0 - (train_value / valid_value)) * 100.0
+
+
+def build_cross_validate_comparison_table(
+    models: dict[str, Any],
+    *,
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: dict[str, str] | None = None,
+) -> pd.DataFrame:
+    """Gera a tabela consolidada de treino/validação para comparação técnica."""
+    scoring = scoring or build_default_scoring()
+    metric_label_map = {
+        "pr_auc": "PR-AUC",
+        "roc_auc": "ROC-AUC",
+        "recall": "Recall",
+        "precision": "Precision",
+        "f1": "F1-Score",
+    }
+    rows_list: list[dict[str, Any]] = []
+
+    for model_name, estimator in models.items():
+        cv_res = cross_validate(
+            estimator=estimator,
+            X=X,
+            y=y,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=1,
+            return_train_score=True,
+        )
+
+        row = {"modelo": model_name}
+        for metric_key, metric_label in metric_label_map.items():
+            train_mean = float(np.mean(cv_res[f"train_{metric_key}"]))
+            valid_mean = float(np.mean(cv_res[f"test_{metric_key}"]))
+            row[metric_label] = valid_mean
+            row[f"{metric_label} gap (%)"] = compute_generalization_gap_pct(
+                train_mean,
+                valid_mean,
+            )
+
+        row["fit_time(mean)"] = float(np.mean(cv_res["fit_time"]))
+        row["score_time(mean)"] = float(np.mean(cv_res["score_time"]))
+        rows_list.append(row)
+
+    return pd.DataFrame(rows_list).sort_values("PR-AUC", ascending=False).reset_index(drop=True)
+
+
+def calculate_expected_calibration_error(
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    *,
+    n_bins: int = 10,
+) -> float:
+    """Calcula o ECE com bins uniformes em [0, 1]."""
+    y_true_arr = np.asarray(y_true, dtype=float)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
+    ece = 0.0
+
+    for lower, upper in zip(bin_edges[:-1], bin_edges[1:]):
+        if np.isclose(upper, 1.0):
+            mask = (y_prob_arr >= lower) & (y_prob_arr <= upper)
+        else:
+            mask = (y_prob_arr >= lower) & (y_prob_arr < upper)
+        if not np.any(mask):
+            continue
+
+        acc = float(y_true_arr[mask].mean())
+        conf = float(y_prob_arr[mask].mean())
+        weight = float(mask.mean())
+        ece += abs(acc - conf) * weight
+
+    return float(ece)
+
+
+def summarize_calibration_for_models(
+    oof_predictions_by_model: dict[str, pd.DataFrame],
+    *,
+    n_bins: int = 10,
+) -> pd.DataFrame:
+    """Consolida Brier Score e ECE por modelo."""
+    rows_list: list[dict[str, Any]] = []
+    for model_name, oof_df in oof_predictions_by_model.items():
+        y_true = oof_df["y_true"].to_numpy(dtype=int)
+        y_prob = oof_df["proba"].to_numpy(dtype=float)
+        rows_list.append(
+            {
+                "modelo": model_name,
+                "brier_score": float(brier_score_loss(y_true, y_prob)),
+                "ece": calculate_expected_calibration_error(
+                    y_true,
+                    y_prob,
+                    n_bins=n_bins,
+                ),
+            }
+        )
+    return pd.DataFrame(rows_list).sort_values("modelo").reset_index(drop=True)
+
+
+def compute_campaign_economics(
+    *,
+    y_true: Sequence[int] | np.ndarray,
+    y_prob: Sequence[float] | np.ndarray,
+    cltv: Sequence[float] | np.ndarray,
+    threshold: float = 0.5,
+    campaign_cost: float = 100000.0,
+    retention_rate: float = 0.1,
+) -> dict[str, float]:
+    """Calcula VR, Vrec, VP, CMCA, VD, IEL e ROI."""
+    y_true_arr = np.asarray(y_true, dtype=int)
+    y_prob_arr = np.asarray(y_prob, dtype=float)
+    cltv_arr = np.asarray(cltv, dtype=float)
+    y_pred = (y_prob_arr >= threshold).astype(int)
+
+    tp_mask = (y_pred == 1) & (y_true_arr == 1)
+    fp_mask = (y_pred == 1) & (y_true_arr == 0)
+    fn_mask = (y_pred == 0) & (y_true_arr == 1)
+    tn_mask = (y_pred == 0) & (y_true_arr == 0)
+
+    tp = int(tp_mask.sum())
+    fp = int(fp_mask.sum())
+    fn = int(fn_mask.sum())
+    tn = int(tn_mask.sum())
+
+    vr = float(np.sum(y_prob_arr[tp_mask] * cltv_arr[tp_mask]))
+    vrec = float(vr * retention_rate)
+    vp = float(np.sum(y_prob_arr[fn_mask] * cltv_arr[fn_mask]))
+    total_acted = tp + fp
+    cmca = float(campaign_cost / total_acted) if total_acted > 0 else 0.0
+    vd = float(fp * cmca)
+    iel = float(vrec - vp - vd)
+    roi = float((vrec - vp - campaign_cost) / campaign_cost) if campaign_cost else np.nan
+
+    return {
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
+        "vr": vr,
+        "vrec": vrec,
+        "vp": vp,
+        "cmca": cmca,
+        "vd": vd,
+        "iel": iel,
+        "roi": roi,
+        "threshold": float(threshold),
+        "campaign_cost": float(campaign_cost),
+        "retention_rate": float(retention_rate),
+    }
+
+
+def build_economic_comparison_table(
+    oof_predictions_by_model: dict[str, pd.DataFrame],
+    *,
+    metadata: pd.DataFrame,
+    campaign_cost: float = 100000.0,
+    retention_rate: float = 0.1,
+    threshold: float = 0.5,
+) -> pd.DataFrame:
+    """Consolida a análise econômica por modelo."""
+    if "CLTV" not in metadata.columns:
+        raise KeyError("metadata precisa conter a coluna 'CLTV'.")
+
+    rows_list: list[dict[str, Any]] = []
+    cltv_by_index = metadata["CLTV"]
+
+    for model_name, oof_df in oof_predictions_by_model.items():
+        aligned_cltv = cltv_by_index.loc[oof_df["row_index"]].to_numpy(dtype=float)
+        metrics = compute_campaign_economics(
+            y_true=oof_df["y_true"].to_numpy(dtype=int),
+            y_prob=oof_df["proba"].to_numpy(dtype=float),
+            cltv=aligned_cltv,
+            threshold=threshold,
+            campaign_cost=campaign_cost,
+            retention_rate=retention_rate,
+        )
+        rows_list.append({"modelo": model_name, **metrics})
+
+    return pd.DataFrame(rows_list).sort_values("iel", ascending=False).reset_index(drop=True)
+
+
+def build_artifact_name(prefix: str, model_name: str, suffix: str) -> str:
+    """Padroniza nomes de artefatos do notebook 03."""
+    slug = (
+        model_name.lower()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+    )
+    return f"{prefix}_{slug}.{suffix}"
+
+
+def save_figure_temp(fig: Any, artifact_name: str) -> Path:
+    """Salva uma figura em diretório temporário para logging posterior no MLflow."""
+    artifact_path = Path(tempfile.gettempdir()) / artifact_name
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(artifact_path, dpi=150, bbox_inches="tight")
+    return artifact_path
 
 
 def require_xgboost():

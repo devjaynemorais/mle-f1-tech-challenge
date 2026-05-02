@@ -7,6 +7,17 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from scipy import stats
+from sklearn.calibration import calibration_curve
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    auc,
+    average_precision_score,
+    confusion_matrix,
+    precision_recall_curve,
+    roc_auc_score,
+    roc_curve,
+)
+from sklearn.model_selection import learning_curve
 
 
 def plot_univariate(df: pd.DataFrame, col: str):
@@ -245,4 +256,183 @@ def plot_random_search_heatmap(
     ax.set_title(title or f"{value_col} por {y_col} x {x_col}", fontsize=12, fontweight="bold")
     ax.set_xlabel(x_col)
     ax.set_ylabel(y_col)
+    return _finalize_figure(fig, show)
+
+
+def _make_grid_figure(
+    total_panels: int,
+    n_cols: int = 2,
+    figsize_scale: tuple[float, float] = (6.0, 4.5),
+) -> tuple[plt.Figure, np.ndarray]:
+    n_rows = math.ceil(total_panels / n_cols)
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(figsize_scale[0] * n_cols, figsize_scale[1] * n_rows),
+    )
+    axes_arr = np.atleast_1d(axes).reshape(-1)
+    return fig, axes_arr
+
+
+def plot_roc_curves_grid(
+    oof_predictions: dict[str, pd.DataFrame],
+    *,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota um grid 2x2 de curvas ROC a partir das probabilidades OOF."""
+    fig, axes = _make_grid_figure(len(oof_predictions), n_cols=n_cols)
+    sns.set_style("whitegrid")
+
+    for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
+        y_true = oof_df["y_true"].to_numpy(dtype=int)
+        y_prob = oof_df["proba"].to_numpy(dtype=float)
+        fpr, tpr, _ = roc_curve(y_true, y_prob)
+        roc_auc = roc_auc_score(y_true, y_prob)
+        ax.plot(fpr, tpr, color="steelblue", linewidth=2, label=f"AUC = {roc_auc:.4f}")
+        ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1)
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("False Positive Rate")
+        ax.set_ylabel("True Positive Rate")
+        ax.legend(loc="lower right")
+
+    _hide_unused_axes(axes, len(oof_predictions))
+    fig.suptitle("Curvas ROC por Modelo", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_pr_curves_grid(
+    oof_predictions: dict[str, pd.DataFrame],
+    *,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota um grid 2x2 de curvas Precision-Recall."""
+    fig, axes = _make_grid_figure(len(oof_predictions), n_cols=n_cols)
+    sns.set_style("whitegrid")
+
+    for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
+        y_true = oof_df["y_true"].to_numpy(dtype=int)
+        y_prob = oof_df["proba"].to_numpy(dtype=float)
+        precision, recall, _ = precision_recall_curve(y_true, y_prob)
+        pr_auc = average_precision_score(y_true, y_prob)
+        ax.plot(recall, precision, color="darkorange", linewidth=2, label=f"AP = {pr_auc:.4f}")
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Recall")
+        ax.set_ylabel("Precision")
+        ax.legend(loc="lower left")
+
+    _hide_unused_axes(axes, len(oof_predictions))
+    fig.suptitle("Curvas Precision-Recall por Modelo", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_learning_curves_grid(
+    models: dict[str, object],
+    *,
+    X,
+    y,
+    cv,
+    scoring: str = "average_precision",
+    train_sizes: np.ndarray | None = None,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota learning curves em grid 2x2 para os modelos comparados."""
+    fig, axes = _make_grid_figure(len(models), n_cols=n_cols)
+    sns.set_style("whitegrid")
+    train_sizes = train_sizes if train_sizes is not None else np.linspace(0.1, 1.0, 5)
+
+    for ax, (model_name, estimator) in zip(axes, models.items()):
+        sizes, train_scores, valid_scores = learning_curve(
+            estimator=estimator,
+            X=X,
+            y=y,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=1,
+            train_sizes=train_sizes,
+        )
+        train_mean = train_scores.mean(axis=1)
+        valid_mean = valid_scores.mean(axis=1)
+        ax.plot(sizes, train_mean, marker="o", color="steelblue", label="Treino")
+        ax.plot(sizes, valid_mean, marker="s", color="darkorange", label="Validação")
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Amostras de treino")
+        ax.set_ylabel(scoring)
+        ax.legend(loc="best")
+
+    _hide_unused_axes(axes, len(models))
+    fig.suptitle("Learning Curves por Modelo", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_confusion_matrices_grid(
+    oof_predictions: dict[str, pd.DataFrame],
+    *,
+    threshold: float = 0.5,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota um grid 2x2 de matrizes de confusão."""
+    fig, axes = _make_grid_figure(len(oof_predictions), n_cols=n_cols)
+
+    for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
+        y_true = oof_df["y_true"].to_numpy(dtype=int)
+        y_pred = (oof_df["proba"].to_numpy(dtype=float) >= threshold).astype(int)
+        cm = confusion_matrix(y_true, y_pred)
+        ConfusionMatrixDisplay(confusion_matrix=cm).plot(ax=ax, colorbar=False)
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+
+    _hide_unused_axes(axes, len(oof_predictions))
+    fig.suptitle("Matrizes de Confusão por Modelo", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_calibration_curves_grid(
+    oof_predictions: dict[str, pd.DataFrame],
+    *,
+    n_bins: int = 10,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota um grid 2x2 de curvas de calibração."""
+    fig, axes = _make_grid_figure(len(oof_predictions), n_cols=n_cols)
+    sns.set_style("whitegrid")
+
+    for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
+        y_true = oof_df["y_true"].to_numpy(dtype=int)
+        y_prob = oof_df["proba"].to_numpy(dtype=float)
+        frac_pos, mean_pred = calibration_curve(y_true, y_prob, n_bins=n_bins, strategy="uniform")
+        ax.plot(mean_pred, frac_pos, marker="o", color="steelblue", linewidth=2, label="Modelo")
+        ax.plot([0, 1], [0, 1], linestyle="--", color="gray", linewidth=1, label="Ideal")
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Probabilidade média prevista")
+        ax.set_ylabel("Fração observada de churn")
+        ax.legend(loc="best")
+
+    _hide_unused_axes(axes, len(oof_predictions))
+    fig.suptitle("Curvas de Calibração por Modelo", fontsize=14, fontweight="bold")
+    return _finalize_figure(fig, show)
+
+
+def plot_probability_histograms_grid(
+    oof_predictions: dict[str, pd.DataFrame],
+    *,
+    bins: int = 20,
+    n_cols: int = 2,
+    show: bool = True,
+) -> plt.Figure:
+    """Plota histogramas das probabilidades previstas em grid 2x2."""
+    fig, axes = _make_grid_figure(len(oof_predictions), n_cols=n_cols)
+    sns.set_style("whitegrid")
+
+    for ax, (model_name, oof_df) in zip(axes, oof_predictions.items()):
+        sns.histplot(oof_df["proba"], bins=bins, kde=False, color="steelblue", ax=ax)
+        ax.set_title(model_name, fontsize=11, fontweight="bold")
+        ax.set_xlabel("Probabilidade prevista")
+        ax.set_ylabel("Frequência")
+
+    _hide_unused_axes(axes, len(oof_predictions))
+    fig.suptitle("Histograma de Probabilidades por Modelo", fontsize=14, fontweight="bold")
     return _finalize_figure(fig, show)
