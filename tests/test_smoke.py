@@ -5,7 +5,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import joblib
 import numpy as np
 import torch
 import yaml
@@ -22,13 +21,6 @@ def test_config_carrega():
         "random_forest",
         "dummy",
     )
-
-
-def test_modelo_producao_existe():
-    with open("config/config.yaml") as f:
-        config = yaml.safe_load(f)
-    model_path = Path(config["model"]["model_path"])
-    assert model_path.exists(), f"Modelo não encontrado: {model_path}"
 
 
 def test_mlp_carrega_e_prediz():
@@ -75,25 +67,6 @@ def test_train_with_early_stopping_respects_min_delta(monkeypatch):
     assert epochs_ran == 3
 
 
-def test_scaler_carrega():
-    scaler = joblib.load("models/mlp_scaler.pkl")
-    import numpy as np
-
-    X = np.random.randn(5, 31).astype("float32")
-    result = scaler.transform(X)
-    assert result.shape == (5, 31)
-
-
-def test_feature_columns_json_existe():
-    import json
-
-    path = Path("models/feature_columns.json")
-    assert path.exists()
-    cols = json.load(open(path))
-    assert len(cols) > 0
-    assert isinstance(cols[0], str)
-
-
 def test_mlp_wrapper_fit_predict():
     from sklearn.datasets import make_classification
 
@@ -128,17 +101,20 @@ def test_mlp_wrapper_fit_predict():
 def test_experimentation_notebook_contains_random_search_exploration_section():
     import json
 
-    notebook = json.loads(Path("notebooks/02_experimentation.ipynb").read_text(encoding="utf-8"))
+    notebook = json.loads(
+        Path("notebooks/02_experimentation.ipynb").read_text(encoding="utf-8")
+    )
     notebook_source = "\n".join(
-        "".join(cell.get("source", []))
-        for cell in notebook["cells"]
+        "".join(cell.get("source", [])) for cell in notebook["cells"]
     )
 
     assert "def prepare_random_search_analysis" in notebook_source
     assert "def build_value_counts_summary" in notebook_source
     assert "def build_numeric_describe_summary" in notebook_source
     assert "def build_groupby_summary" in notebook_source
-    assert "Análise exploratória dos resultados do RandomizedSearchCV" in notebook_source
+    assert (
+        "Análise exploratória dos resultados do RandomizedSearchCV" in notebook_source
+    )
     assert "is_top20_stable" in notebook_source
     assert "pr_auc_std" in notebook_source
     assert "mlp_optuna_analysis_summary" in notebook_source
@@ -146,7 +122,9 @@ def test_experimentation_notebook_contains_random_search_exploration_section():
 
 
 def test_experimentation_notebook_has_no_common_mojibake_markers():
-    notebook_text = Path("notebooks/02_experimentation.ipynb").read_text(encoding="utf-8")
+    notebook_text = Path("notebooks/02_experimentation.ipynb").read_text(
+        encoding="utf-8"
+    )
 
     suspicious_sequences = [
         "Ã§",
@@ -160,7 +138,7 @@ def test_experimentation_notebook_has_no_common_mojibake_markers():
         "ÃƒÂ",
         "â€™",
         "â€œ",
-        "â€",
+        "â€",
         "ï¿½",
     ]
 

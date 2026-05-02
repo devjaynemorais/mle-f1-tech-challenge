@@ -43,6 +43,11 @@ addopts = "-ra -q --verbose"
 testpaths = [
     "tests",
 ]
+filterwarnings = [
+    "ignore:Features.*are constant:UserWarning:sklearn",
+    "ignore:divide by zero encountered in divide:RuntimeWarning:sklearn",
+    "ignore:vert.*deprecated:PendingDeprecationWarning:seaborn",
+]
 
 [tool.black]
 line-length = 88

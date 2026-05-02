@@ -109,8 +109,9 @@ make compose-down       # para tudo
 
 ### Pré-requisitos
 
+- `make` instalado localmente (Linux/Mac: nativo; Windows: via [Chocolatey](https://chocolatey.org/) com `choco install make` ou via Git Bash)
 - `uv` instalado localmente
-- Docker Desktop (opcional — para rodar a stack completa via containers)
+- Docker Desktop (necessário para rodar a stack via containers — MLflow, API, Prometheus, Grafana)
 
 ### Ambiente Virtual
 
