@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import io
 import os
+import socket
 import sys
+import time
 import warnings
 from functools import partial
 from pathlib import Path
@@ -104,6 +106,42 @@ from src.utils.optuna_search import (
 # ---------------------------------------------------------------------------
 
 META_COLS = ["CLTV", "CustomerID"]
+MLFLOW_PORT = 5000
+
+
+def _ensure_mlflow_ui(db_uri: str) -> None:
+    """Sobe o servidor MLflow em background se a porta não estiver ocupada."""
+    import subprocess as _sp
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        already_running = s.connect_ex(("localhost", MLFLOW_PORT)) == 0
+
+    if already_running:
+        print(f"  MLflow UI ja rodando em http://localhost:{MLFLOW_PORT}")
+        return
+
+    _sp.Popen(
+        [
+            sys.executable,
+            "-m",
+            "mlflow",
+            "ui",
+            "--host",
+            "localhost",
+            "--port",
+            str(MLFLOW_PORT),
+            "--backend-store-uri",
+            db_uri,
+            "--allowed-hosts",
+            f"localhost,localhost:{MLFLOW_PORT}",
+        ],
+        stdout=_sp.DEVNULL,
+        stderr=_sp.DEVNULL,
+        cwd=str(BASE_DIR),
+    )
+    time.sleep(2)
+    print(f"  MLflow UI iniciado em http://localhost:{MLFLOW_PORT}")
+
 
 MLFLOW_EXPERIMENTS = {
     "baselines": "tc-f1-nb02-baselines",
@@ -731,10 +769,12 @@ def write_best_params(mlp_params: dict, config: dict) -> None:
 def main() -> None:
     config = _load_config()
 
+    raw_uri = config["mlflow"]["tracking_uri"]
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI") or resolve_tracking_uri(
-        config["mlflow"]["tracking_uri"], workspace_root=BASE_DIR
+        raw_uri, workspace_root=BASE_DIR
     )
     mlflow.set_tracking_uri(tracking_uri)
+    _ensure_mlflow_ui(raw_uri)
 
     print("\n[0/7] Preparando dados...")
     interim_path = BASE_DIR / config["data"]["interim_path"]

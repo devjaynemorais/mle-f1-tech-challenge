@@ -13,8 +13,10 @@ from __future__ import annotations
 import io
 import os
 import re
+import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
@@ -67,6 +69,39 @@ from src.utils.mlflow_tracking import (
 MLFLOW_EXPERIMENT = "tc-f1-nb03-MLP-production-performance"
 PRODUCTION_RUN_NAME = "nb03_mlp_production_model_threshold_035"
 META_COLS = ["CLTV", "CustomerID"]
+MLFLOW_PORT = 5000
+
+
+def _ensure_mlflow_ui(db_uri: str) -> None:
+    """Sobe o servidor MLflow em background se a porta não estiver ocupada."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        already_running = s.connect_ex(("localhost", MLFLOW_PORT)) == 0
+
+    if already_running:
+        print(f"  MLflow UI ja rodando em http://localhost:{MLFLOW_PORT}")
+        return
+
+    subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "mlflow",
+            "ui",
+            "--host",
+            "localhost",
+            "--port",
+            str(MLFLOW_PORT),
+            "--backend-store-uri",
+            db_uri,
+            "--allowed-hosts",
+            f"localhost,localhost:{MLFLOW_PORT}",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        cwd=str(BASE_DIR),
+    )
+    time.sleep(2)
+    print(f"  MLflow UI iniciado em http://localhost:{MLFLOW_PORT}")
 
 
 def _load_config() -> dict:
@@ -135,10 +170,12 @@ def main() -> None:
     split_params = best_params["split"]
     prod_params = best_params["production"]
 
+    raw_uri = config["mlflow"]["tracking_uri"]
     tracking_uri = os.environ.get("MLFLOW_TRACKING_URI") or resolve_tracking_uri(
-        config["mlflow"]["tracking_uri"], workspace_root=BASE_DIR
+        raw_uri, workspace_root=BASE_DIR
     )
     mlflow.set_tracking_uri(tracking_uri)
+    _ensure_mlflow_ui(raw_uri)
 
     phases = tqdm(
         [
