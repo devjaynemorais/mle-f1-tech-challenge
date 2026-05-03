@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "mle-f1-tech-challenge"
 version = "0.1.0"
 description = "Telecommunications Customer Churn Prediction Pipeline"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0.0",
     "scikit-learn>=1.2.0",
@@ -18,10 +18,13 @@ dependencies = [
     "openpyxl>=3.1.5",
     "folium>=0.20.0",
     "statsmodels>=0.14.6",
+    "optuna>=4.0.0",
     "fastapi>=0.100.0",
     "uvicorn[standard]>=0.23.0",
     "pandera>=0.17.0",
     "httpx>=0.24.0",
+    "xgboost>=3.0.0",
+    "prometheus-fastapi-instrumentator>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +43,11 @@ addopts = "-ra -q --verbose"
 testpaths = [
     "tests",
 ]
+filterwarnings = [
+    "ignore:Features.*are constant:UserWarning:sklearn",
+    "ignore:divide by zero encountered in divide:RuntimeWarning:sklearn",
+    "ignore:vert.*deprecated:PendingDeprecationWarning:seaborn",
+]
 
 [tool.black]
 line-length = 88
@@ -53,4 +61,4 @@ line_length = 88
 [tool.ruff]
 line-length = 88
 target-version = "py39"
-per-file-ignores = {"notebooks/*.ipynb" = ["F821"]}  # cross-cell refs válidas em notebooks
+per-file-ignores = {"notebooks/*.ipynb" = ["F821", "E402", "F401", "F811"]}

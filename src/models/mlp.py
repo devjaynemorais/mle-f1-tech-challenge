@@ -8,6 +8,26 @@ from src.evaluation.metrics import compute_metrics
 DEFAULT_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def build_activation(activation: str = "relu") -> nn.Module:
+    """Constroi a função de ativação a partir de um identificador estável."""
+    activation_name = activation.lower()
+    activations = {
+        "relu": nn.ReLU,
+        "leaky_relu": nn.LeakyReLU,
+        "elu": nn.ELU,
+        "gelu": nn.GELU,
+        "tanh": nn.Tanh,
+    }
+
+    if activation_name not in activations:
+        supported = ", ".join(sorted(activations))
+        raise ValueError(
+            f"Unsupported activation '{activation}'. Supported values: {supported}."
+        )
+
+    return activations[activation_name]()
+
+
 class MLP(nn.Module):
     """
     Rede Neural Multicamadas (MLP) para classificação binária.
@@ -19,16 +39,64 @@ class MLP(nn.Module):
     output_dim : int — dimensão da saída (default 1 para classificação binária)
     """
 
-    def __init__(self, input_dim: int, hidden_dim: int = 64, output_dim: int = 1):
-        super().__init__()
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dim: int = 64,
+        output_dim: int = 1,
+        activation: str = "relu",
+        dropout: float = 0.0,
+    ):
+        super(MLP, self).__init__()
+        self.activation_name = activation
+        self.dropout = dropout
         self.features = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
+            build_activation(activation),
+            nn.Dropout(p=dropout),
         )
         self.out = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         return self.out(self.features(X))
+
+
+class CityEmbeddingMLP(nn.Module):
+    """MLP tabular com embedding dedicado para a coluna City."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        n_cities: int,
+        embedding_dim: int = 16,
+        hidden_dim: int = 64,
+        output_dim: int = 1,
+        activation: str = "relu",
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.activation_name = activation
+        self.dropout = dropout
+        self.city_embedding = nn.Embedding(
+            num_embeddings=n_cities + 1,
+            embedding_dim=embedding_dim,
+            padding_idx=0,
+        )
+        self.features = nn.Sequential(
+            nn.Linear(input_dim + embedding_dim, hidden_dim),
+            build_activation(activation),
+            nn.Dropout(p=dropout),
+        )
+        self.out = nn.Linear(hidden_dim, output_dim)
+
+    def forward(
+        self,
+        x_tabular: torch.Tensor,
+        x_city: torch.Tensor,
+    ) -> torch.Tensor:
+        city_vec = self.city_embedding(x_city)
+        x = torch.cat([x_tabular, city_vec], dim=1)
+        return self.out(self.features(x))
 
 
 def train_epoch(
@@ -86,6 +154,7 @@ def train_with_early_stopping(
     device: torch.device,
     max_epochs: int = 50,
     patience: int = 7,
+    min_delta: float = 1e-3,
     threshold: float = 0.5,
     logger=None,
 ) -> int:
@@ -103,7 +172,7 @@ def train_with_early_stopping(
         train_loss = train_epoch(model, train_loader, optimizer, criterion, device)
         val_loss, _ = evaluate(model, val_loader, criterion, device, threshold)
 
-        if val_loss < best_val_loss:
+        if val_loss < (best_val_loss - min_delta):
             best_val_loss = val_loss
             patience_counter = 0
             best_state = {k: v.clone() for k, v in model.state_dict().items()}

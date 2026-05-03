@@ -4,7 +4,9 @@ import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
+from src.api.metrics import CHURN_PROBABILITY, PREDICTIONS_TOTAL
 from src.api.predictor import get_predictor
 from src.api.schemas import BatchPredictRequest, BatchPredictResponse, HealthResponse
 from src.utils.logging_config import get_logger
@@ -16,6 +18,8 @@ app = FastAPI(
     description="API de inferência batch para predição de churn de clientes de telecom.",  # noqa: E501
     version="1.0.0",
 )
+
+Instrumentator().instrument(app).expose(app)
 
 
 @app.middleware("http")
@@ -50,6 +54,8 @@ def health():
         status="ok",
         model=predictor.model_name,
         model_path=predictor.model_path,
+        model_uri=predictor.model_uri,
+        threshold=predictor.threshold,
     )
 
 
@@ -64,8 +70,12 @@ def predict_batch(body: BatchPredictRequest):
     predictor = get_predictor()
     logger.info("Recebida requisição batch com %d registros.", len(body.records))
     predictions = predictor.predict_batch(body.records)
+    PREDICTIONS_TOTAL.labels(model=predictor.model_name).inc(len(predictions))
+    for pred in predictions:
+        CHURN_PROBABILITY.observe(pred.churn_probability)
     return BatchPredictResponse(
         model=predictor.model_name,
+        threshold=predictor.threshold,
         n_records=len(body.records),
         predictions=predictions,
     )

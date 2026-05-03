@@ -179,10 +179,14 @@ class AnaliseIV:
 
         if self.convention == "event_over_nonevent":
             tabela["WOE"] = np.log(tabela["Dist_Event"] / tabela["Dist_NonEvent"])
+            tabela["IV"] = (
+                tabela["Dist_Event"] - tabela["Dist_NonEvent"]
+            ) * tabela["WOE"]
         else:
             tabela["WOE"] = np.log(tabela["Dist_NonEvent"] / tabela["Dist_Event"])
-
-        tabela["IV"] = (tabela["Dist_Event"] - tabela["Dist_NonEvent"]) * tabela["WOE"]
+            tabela["IV"] = (
+                tabela["Dist_NonEvent"] - tabela["Dist_Event"]
+            ) * tabela["WOE"]
         tabela["Variavel"] = var
         tabela = tabela.rename(columns={var: "Var_Range"})
         self.df_tabs_iv = pd.concat([self.df_tabs_iv, tabela], axis=0)

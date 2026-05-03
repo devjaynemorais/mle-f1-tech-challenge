@@ -17,10 +17,14 @@ YesNoInternet = Literal["Yes", "No", "No internet service"]
 class CustomerFeatures(BaseModel):
     """Features de um cliente para predição de churn."""
 
-    gender: Literal["Male", "Female"] = Field(..., examples=["Male", "Female"])
+    gender: Literal["Male", "Female"] = Field(
+        ...,
+        alias="Gender",
+        examples=["Male", "Female"],
+    )
     senior_citizen: YesNo = Field(..., alias="Senior Citizen", examples=["Yes", "No"])
-    partner: YesNo = Field(..., examples=["Yes", "No"])
-    dependents: YesNo = Field(..., examples=["Yes", "No"])
+    partner: YesNo = Field(..., alias="Partner", examples=["Yes", "No"])
+    dependents: YesNo = Field(..., alias="Dependents", examples=["Yes", "No"])
     tenure_months: float = Field(..., alias="Tenure Months", ge=0, examples=[12])
     phone_service: YesNo = Field(..., alias="Phone Service", examples=["Yes", "No"])
     multiple_lines: YesNoPhone = Field(
@@ -48,7 +52,9 @@ class CustomerFeatures(BaseModel):
         ..., alias="Streaming Movies", examples=["Yes", "No", "No internet service"]
     )
     contract: Literal["Month-to-month", "One year", "Two year"] = Field(
-        ..., examples=["Month-to-month", "One year", "Two year"]
+        ...,
+        alias="Contract",
+        examples=["Month-to-month", "One year", "Two year"],
     )
     paperless_billing: YesNo = Field(
         ..., alias="Paperless Billing", examples=["Yes", "No"]
@@ -81,6 +87,7 @@ class BatchPredictRequest(BaseModel):
 
 class BatchPredictResponse(BaseModel):
     model: str
+    threshold: float
     n_records: int
     predictions: List[PredictionResult]
 
@@ -89,3 +96,5 @@ class HealthResponse(BaseModel):
     status: str
     model: str
     model_path: str
+    model_uri: str
+    threshold: float

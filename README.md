@@ -2,7 +2,75 @@
 
 Pipeline de Machine Learning de ponta a ponta para prever evasão de clientes (*churn*) em uma empresa de telecomunicações.
 
-O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de experimentos com MLflow, API de inferência batch com FastAPI e containerização com Docker.
+O projeto cobre EDA, modelagem com Scikit-Learn (MLP + Optuna), rastreamento de experimentos com MLflow, API de inferência batch com FastAPI e containerização com Docker.
+
+---
+
+## ⚠️ Para Rodar o Pipeline Completo
+
+> **Leia antes de executar qualquer comando.**
+
+O `make train` e o `make compose-train` **não treinam o modelo** — eles materializam localmente um modelo já registrado no MLflow para ser servido pela API. O treinamento, o registro no MLflow e a atualização do `config.yaml` são feitos automaticamente pelo `make setup`.
+
+**Passos obrigatórios, em ordem:**
+
+1. Coloque os dados brutos em `data/raw/Telco_customer_churn.xlsx`
+2. `make env` — cria o ambiente virtual
+3. `make setup` — executa o notebook 03, registra o run no MLflow, atualiza `config/config.yaml` e materializa o modelo em `models/production/`
+4. A partir daqui, escolha como servir a API:
+
+   **Opção A — local** (usa o código e modelo do host diretamente):
+   ```bash
+   make api
+   ```
+
+   **Opção B — Docker** (requer rebuild para incorporar o modelo e o código atualizados):
+   ```bash
+   make compose-build  # builda as imagens com o config.yaml e código atualizados
+   make compose-full   # sobe MLflow + API + Prometheus + Grafana
+   ```
+
+> **Por que o `run_id` fica no `config.yaml`?**
+> O modelo de produção é rastreado pelo MLflow — o `run_id` aponta para o experimento exato que gerou o modelo, garantindo reprodutibilidade. Se você clonou o repositório, o `run_id` presente no `config.yaml` pertence a outro ambiente e não existe no seu MLflow local. Re-execute `make setup` para gerar e registrar o seu próprio run.
+
+---
+
+## ⚡ Início Rápido
+
+> **Referência granular** — lista todos os comandos disponíveis individualmente, para quem quiser executar etapas isoladas. Para rodar o pipeline completo do zero, siga a seção [⚠️ Para Rodar o Pipeline Completo](#️-para-rodar-o-pipeline-completo) acima.
+
+### Local
+
+```bash
+make env               # cria o ambiente virtual
+make setup             # treina o modelo, atualiza config.yaml e materializa os artefatos
+make lint              # linting com ruff
+make test              # testes com pytest
+make train             # só materializa (requer run_id válido — use make setup)
+make inference         # avalia o modelo no conjunto de teste
+make api               # sobe a API em http://localhost:8000
+make mlflow            # sobe MLflow UI em http://localhost:5000
+```
+
+### Docker Compose
+
+```bash
+make compose-build      # build das imagens (uma vez)
+make compose-train      # sobe MLflow + materializa o modelo (requer run_id válido — veja acima)
+make compose-up         # sobe MLflow + API
+make compose-monitoring # sobe Prometheus + Grafana
+make compose-full       # sobe tudo: MLflow + API + Prometheus + Grafana
+make compose-down       # para tudo
+```
+
+### Interfaces disponíveis
+
+| Serviço | URL | Credenciais |
+|---|---|---|
+| API Swagger | http://localhost:8000/docs | — |
+| MLflow UI | http://localhost:5000 | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | admin / admin |
 
 ---
 
@@ -10,28 +78,29 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 
 ```
 .
-├── config/           # Configuração YAML (features, modelo, MLflow)
+├── config/           # Configuração YAML (features, modelo, MLflow, produção)
 ├── data/
 │   ├── raw/          # Dados brutos imutáveis (Telco_customer_churn.xlsx)
 │   ├── interim/      # Dados limpos intermediários
 │   └── processed/    # Dados prontos para modelagem (train/test)
 ├── docs/             # ML Canvas, Model Card, documentação
-├── models/           # Artefatos gerados pelo treino (.pt, .pkl)
+├── models/
+│   └── production/   # Artefatos do modelo de produção (gerados por make train)
 ├── notebooks/        # Notebooks de experimentação e análise
 ├── src/
 │   ├── api/          # FastAPI: main.py, schemas.py, predictor.py
 │   ├── data/         # Carga e limpeza dos dados brutos
 │   ├── features/     # Engenharia de features e encoders
-│   ├── models/       # MLP (PyTorch), treino e predição
+│   ├── models/       # Treino, produção e predição
 │   ├── evaluation/   # Métricas técnicas (compute_metrics)
 │   └── utils/        # Logging, EDA, plots, estatísticas
 ├── tests/            # Testes automatizados com pytest
 ├── Dockerfile        # Imagem Docker — treino, inferência e API via entrypoint.sh
-├── docker-compose.yml# Orquestra mlflow + train + api
+├── docker-compose.yml
 ├── entrypoint.sh     # Roteador de modo: train | inference | api | mlflow
-├── Makefile          # Atalhos: lint, test, train, inference, api, docker, compose
-├── run_train.py      # Pipeline de treino (dados → features → modelo)
-└── run_inference.py  # Pipeline de inferência (carrega modelo → prediz)
+├── Makefile          # Atalhos para todos os comandos do projeto
+├── run_train.py      # Materializa o modelo de produção a partir do MLflow
+└── run_inference.py  # Avalia o modelo no conjunto de teste
 ```
 
 ---
@@ -40,63 +109,54 @@ O projeto cobre EDA, modelagem com PyTorch (MLP) e Scikit-Learn, rastreamento de
 
 ### Pré-requisitos
 
-- Python 3.9 ou superior
-- Docker (opcional — cobre treino, inferência e API via containers, sem instalar Python localmente)
+- `make` instalado localmente (Linux/Mac: nativo; Windows: via [Chocolatey](https://chocolatey.org/) com `choco install make` ou via Git Bash)
+- `uv` instalado localmente
+- Docker Desktop (necessário para rodar a stack via containers — MLflow, API, Prometheus, Grafana)
 
-### Passo a Passo
+### Ambiente Virtual
 
-1. Crie o ambiente virtual:
+```bash
+make env   # equivalente a: uv sync --extra dev
+```
 
-   ```bash
-   python -m venv .venv
-   ```
+Ative o venv (necessário apenas se não usar `uv run`):
 
-2. Ative o ambiente:
+| Terminal | Comando |
+|---|---|
+| Git Bash (Windows) | `source .venv/Scripts/activate` |
+| PowerShell (Windows) | `.\.venv\Scripts\Activate.ps1` |
+| Bash / Zsh (Linux/Mac) | `source .venv/bin/activate` |
 
-   | Sistema | Comando |
-   |---|---|
-   | PowerShell (Windows) | `.\.venv\Scripts\Activate.ps1` |
-   | Bash (Linux/Mac) | `source .venv/bin/activate` |
-   | Git Bash (Windows) | `source .venv/Scripts/activate` |
+> **Sem ativar:** todos os `make` já usam `uv run` internamente — funciona de qualquer terminal sem ativação manual.
 
-3. Instale as dependências:
+### (Opcional) Exportação de PDF
 
-   ```bash
-   pip install --upgrade pip
-   pip install -e ".[dev]"
-   ```
-
-4. (Opcional) Instale o browser headless para exportação de PDF:
-
-   ```bash
-   playwright install chromium
-   ```
+```bash
+uv run playwright install chromium
+```
 
 ---
 
 ## 🚀 Execução
 
-O projeto tem **quatro fluxos independentes:**
+O projeto tem **cinco fluxos independentes:**
 
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
 | 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | Notebooks Jupyter |
-| 2 | [Treino](#-2-treino) | Treinar o modelo de produção | `python run_train.py` |
-| 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `python run_inference.py` |
+| 2 | [Treino](#-2-treino) | Materializar o modelo de produção | `make train` ou Docker |
+| 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `make inference` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
+| 5 | [Monitoramento](#-5-monitoramento-prometheus--grafana) | Observar a API em produção | Docker Compose |
 
 ---
 
 ## 🧪 1. Experimento
 
 > **Quando usar:** fase de exploração — análise de dados, engenharia de features, comparação de modelos e decisão do campeão.
->
-> **Ferramenta:** Notebooks Jupyter em `notebooks/`
-
-### Execute o Jupyter
 
 ```bash
-jupyter notebook
+uv run jupyter notebook
 ```
 
 > Notebooks com MLflow requerem o servidor em terminal separado:
@@ -109,102 +169,46 @@ jupyter notebook
 | Notebook | O que faz |
 |---|---|
 | `01_exploratory_data_analysis.ipynb` | EDA completa — qualidade, distribuição, correlações |
-| `02_baselines.ipynb` | Baselines: DummyClassifier, Regressão Logística, MLP |
-| `03_experimentação.ipynb` | Experimentação com features e hiperparâmetros + MLflow |
-| `04_modelo_mvp.ipynb` | Seleção e documentação do modelo MVP final |
+| `02_experimentation.ipynb` | Baselines e experimentação com features e hiperparâmetros |
+| `03_modelo_mvp.ipynb` | Modelo final com Optuna + registro no MLflow + análise de fairness |
 
 ---
 
 ## 🏭 2. Treino
 
-> **Quando usar:** após os experimentos, para treinar o modelo de produção com os dados completos.
+> **Quando usar:** após executar o notebook 03 e atualizar o `run_id` no `config.yaml`.
 >
-> **Script:** `run_train.py`  
-> **Config:** `config/config.yaml` — `model.name` define qual modelo treinar.  
-> **Pré-requisito:** dados brutos em `data/raw/Telco_customer_churn.xlsx`.
+> **O que faz:** conecta ao MLflow, baixa os artefatos do run de produção e os grava em `models/production/` para uso da API.  
+> **Pré-requisito:** `run_id` válido em `config/config.yaml` — veja [Para Rodar o Pipeline Completo](#️-para-rodar-o-pipeline-completo).
 
-### Passo 1 — (Opcional) Visualize os runs no MLflow UI
-
-O treino escreve diretamente em `mlflow.db` (SQLite local) — nenhum servidor é necessário para rodar. Para visualizar os experimentos no browser:
+### Local
 
 ```bash
-make mlflow
-# equivalente a: mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db
+make train
+# ou: uv run python run_train.py
 ```
 
-Acesse [http://127.0.0.1:5000](http://127.0.0.1:5000). Pode ser aberto antes ou depois do treino.
-
-### Passo 2 — Execute o treino
+### Docker
 
 ```bash
-python run_train.py
-# ou: make train
+make compose-train
+# equivalente a: docker compose up -d mlflow && docker compose run --rm train
 ```
 
-### Passos executados em sequência
-
-| # | Script | Entrada | Saída |
-|---|---|---|---|
-| 1 | `src/data/make_dataset.py` | `data/raw/Telco_customer_churn.xlsx` | `data/interim/telecom_clean.csv` |
-| 2 | `src/features/build_features.py` | `data/interim/telecom_clean.csv` | `data/processed/train.csv`, `test.csv`, `models/scaler.pkl`, `models/feature_columns.json` |
-| 3 | `src/models/train_model.py` | `data/processed/train.csv` | Modelo em `models/` + run no MLflow |
-
-Se qualquer etapa falhar, o pipeline aborta e exibe o passo com erro.
-
-### Artefatos gerados
-
-O modelo salvo depende do `model.name` em `config/config.yaml`:
-
-| `model.name` | Artefatos gerados |
-|---|---|
-| `mlp` | `models/mlp_baseline.pt` + `models/mlp_scaler.pkl` |
-| `logistic_regression` | `models/logistic_regression.pkl` |
-| `random_forest` | `models/rf_baseline.pkl` |
-| `dummy` | `models/dummy_classifier.pkl` |
-
-> O arquivo `models/feature_columns.json` é sempre gerado e contém a ordem exata das colunas após o one-hot encoding — necessário para a API.
-
-### Saída no terminal (modelo atual: MLP)
-
-```
-2026-04-25 15:40:18 [INFO] __main__: Treinando modelo de produção: mlp
-2026-04-25 15:40:18 [INFO] __main__: Dispositivo: cpu | max_epochs=100 | patience=10
-2026-04-25 15:40:20 [INFO] __main__: Época  10/100  train_loss=0.6482  val_loss=0.6855  paciência=3/10
-2026-04-25 15:40:21 [INFO] __main__: Early stopping na época 17 (melhor val_loss=0.6850)
-2026-04-25 15:40:29 [INFO] __main__: Train recall=0.8234  auc=0.8721 | Test recall=0.7968  auc=0.8519 | Overfit=3.2%
-```
-
-O MLP usa **early stopping** — o treino para automaticamente quando a val_loss não melhora por `patience` épocas e restaura os melhores pesos.
+O container `train` aguarda o MLflow estar saudável, executa `prepare_production_model.py` e encerra. Os artefatos são salvos em `./models/production/` via volume compartilhado.
 
 ---
 
 ## 🔮 3. Inferência
 
-> **Quando usar:** com o modelo já treinado, para avaliar sua performance no conjunto de teste.
+> **Quando usar:** com o modelo já materializado, para avaliar sua performance no conjunto de teste.
 >
-> **Script:** `run_inference.py`  
-> **Config:** `config/config.yaml` — `model.name` define qual modelo carregar.  
-> **Pré-requisito:** modelo em `models/` e dados em `data/processed/test.csv` — gerados pelo [Treino](#-2-treino).
-
-### Execute
+> **Pré-requisito:** modelo em `models/production/` — gerado pelo [Treino](#-2-treino).
 
 ```bash
-python run_inference.py
-# ou: make inference
+make inference
+# ou: uv run python run_inference.py
 ```
-
-### Saída esperada (modelo atual: MLP)
-
-```
-2026-04-25 15:40:29 [INFO] __main__: Carregando modelo de produção: mlp (models/mlp_baseline.pt)
-2026-04-25 15:40:30 [INFO] __main__: === Resultado — Modelo de Produção: mlp ===
-2026-04-25 15:40:30 [INFO] __main__:   Recall   : 0.7968
-2026-04-25 15:40:30 [INFO] __main__:   Precision: 0.5422
-2026-04-25 15:40:30 [INFO] __main__:   F1       : 0.6477
-2026-04-25 15:40:30 [INFO] __main__:   AUC      : 0.8519
-```
-
-Para trocar o modelo de produção, altere `model.name` e `model_path` em `config/config.yaml` e re-execute o treino.
 
 ---
 
@@ -212,13 +216,11 @@ Para trocar o modelo de produção, altere `model.name` e `model_path` em `confi
 
 > **Quando usar:** para servir predições batch em produção. Recebe uma lista de clientes em JSON e retorna probabilidade e label de churn para cada um.
 >
-> **Pré-requisito:** modelo treinado em `models/` e `models/feature_columns.json` — gerados pelo [Treino](#-2-treino).
-
-### Subir a API localmente
+> **Pré-requisito:** modelo materializado em `models/production/` — gerado pelo [Treino](#-2-treino).
 
 ```bash
 make api
-# equivalente a: uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+# ou: uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
@@ -232,7 +234,7 @@ Acesse a documentação interativa em [http://localhost:8000/docs](http://localh
 
 ### Validação de entrada (Pydantic)
 
-Toda requisição ao `/predict` é validada automaticamente pelo Pydantic v2 antes de chegar ao modelo. Erros retornam **HTTP 422** com o campo exato que falhou.
+Toda requisição ao `/predict` é validada automaticamente pelo Pydantic v2. Erros retornam **HTTP 422** com o campo exato que falhou.
 
 **Campos numéricos** — rejeita valores negativos:
 
@@ -292,7 +294,8 @@ curl -X POST http://localhost:8000/predict \
 
 ```json
 {
-  "model": "mlp",
+  "model": "MLP Optuna",
+  "threshold": 0.35,
   "n_records": 1,
   "predictions": [
     {
@@ -303,79 +306,52 @@ curl -X POST http://localhost:8000/predict \
 }
 ```
 
-### Rodando com Docker
-
-> **Pré-requisito único:** [Docker Desktop](https://www.docker.com/get-started) instalado e rodando. Nenhum Python, venv ou dependência local necessária.
-
-O `docker-compose.yml` orquestra três serviços com a mesma imagem:
-
-| Serviço | Papel | Porta |
-|---|---|---|
-| `mlflow` | Tracking server — registra experimentos e métricas | 5000 |
-| `train` | Pipeline de treino completo — executa e encerra | — |
-| `api` | FastAPI + uvicorn — serve predições batch | 8000 |
-
-**Passo 1 — Build (uma vez):**
-
-```bash
-docker compose build
-```
-
-**Passo 2 — Treinar:**
-
-```bash
-docker compose up -d mlflow
-docker compose run --rm train
-```
-
-O `train` aguarda o MLflow estar saudável, executa `make_dataset → build_features → train_model` e encerra. Os artefatos (`.pt`, `.pkl`, `feature_columns.json`) são salvos em `./models/` no host via volume.
-
-**Passo 3 — Subir a API:**
-
-```bash
-docker compose up -d api
-```
-
-**Testar:**
-
-```bash
-curl http://localhost:8000/health
-```
-
-| Interface | URL |
-|---|---|
-| Swagger UI | http://localhost:8000/docs |
-| MLflow UI | http://127.0.0.1:5000 |
-
-**Parar tudo:**
-
-```bash
-docker compose down
-```
-
 ---
 
-## 🔧 Makefile
+## 📊 5. Monitoramento (Prometheus + Grafana)
 
-Atalhos para as operações mais comuns:
+> **Quando usar:** para observar a API em produção — latência, volume de requisições, distribuição das predições e taxa de erros em tempo real.
+>
+> **Pré-requisito:** Docker Desktop instalado. Datasource e dashboard já são provisionados automaticamente.
+
+A API expõe `/metrics` no padrão Prometheus via `prometheus-fastapi-instrumentator`. O Prometheus coleta essas métricas a cada 15 s e o Grafana as visualiza em um dashboard pré-configurado.
+
+### Métricas expostas
+
+| Métrica | Tipo | Descrição |
+|---|---|---|
+| `http_request_duration_seconds` | Histogram | Latência por endpoint — base para P50, P95, P99 |
+| `http_request_duration_seconds_count` | Counter | Total de requisições por endpoint e status HTTP |
+| `churn_predictions_total` | Counter | Total de clientes enviados ao `/predict`, por modelo |
+| `churn_probability` | Histogram | Distribuição das probabilidades retornadas pelo modelo |
+
+### Subir o stack
 
 ```bash
-# Qualidade e testes
-make lint           # ruff check .
-make test           # pytest tests/ -v
-
-# Fluxo local (requer .venv ativo)
-make train          # python run_train.py
-make inference      # python run_inference.py
-make api            # uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
-make mlflow         # mlflow server --host 127.0.0.1 --port 5000 --workers 1
-
-# Docker Compose (fluxo completo, sem Python local)
-make compose-build  # docker compose build
-make compose-train  # sobe mlflow + executa treino one-shot
-make compose-up     # sobe mlflow + api
-make compose-down   # docker compose down
+make compose-full
+# ou: docker compose up -d mlflow api prometheus grafana
 ```
+
+### Acessar as interfaces
+
+| Interface | URL | Credenciais |
+|---|---|---|
+| FastAPI Swagger | http://localhost:8000/docs | — |
+| Métricas brutas | http://localhost:8000/metrics | — |
+| Prometheus | http://localhost:9090 | — |
+| Grafana | http://localhost:3000 | `admin` / `admin` |
+
+No Grafana: menu lateral → **Dashboards** → **"Churn API — Monitoramento"** (provisionado automaticamente).
+
+### Dashboard — painéis disponíveis
+
+| Painel | O que mostra |
+|---|---|
+| Requisições / segundo | Volume de tráfego por endpoint |
+| Taxa de erros 5xx | Falhas internas da API |
+| Latência P50 / P95 / P99 | Tempos de resposta reais |
+| Predições (última hora) | Volume de clientes classificados |
+| Distribuição de probabilidade | Concentração de scores de churn |
 
 ---
 
@@ -383,7 +359,7 @@ make compose-down   # docker compose down
 
 ```bash
 make test
-# ou: pytest tests/ -v
+# ou: uv run pytest tests/ -v
 ```
 
 | Arquivo | O que testa |
@@ -391,71 +367,48 @@ make test
 | `tests/test_smoke.py` | Carregamento do modelo, MLP, scaler e feature_columns |
 | `tests/test_schema.py` | Schema dos datasets (Pandera): tipos, nulos, proporção do split |
 | `tests/test_api.py` | Endpoints `/health` e `/predict`, validação Pydantic, header de latência |
-
-### Smoke tests (`test_smoke.py`)
-
-Verificam que a infraestrutura do modelo está intacta **sem subir a API**. Rodam em segundos e são o primeiro diagnóstico quando algo quebra após um novo treino.
-
-| Teste | O que verifica |
-|---|---|
-| `test_config_carrega` | `config/config.yaml` carrega e `model.name` é um dos modelos suportados |
-| `test_modelo_producao_existe` | Arquivo do modelo apontado em `config.yaml` existe no disco |
-| `test_mlp_carrega_e_prediz` | MLP instancia, executa forward pass com tensor `(4, 31)` e retorna probabilidades em `[0, 1]` |
-| `test_scaler_carrega` | `models/mlp_scaler.pkl` carrega e transforma uma matriz `(5, 31)` sem erros |
-| `test_feature_columns_json_existe` | `models/feature_columns.json` existe, não está vazio e contém strings |
-
-> Os smoke tests **não dependem de dados processados** — só dos artefatos gerados pelo treino (`models/`). Se falharem, o problema está nos artefatos, não na API.
+| `tests/test_production_model.py` | Configurações de produção, inferência e materialização do modelo |
+| `tests/test_feature_transformers.py` | Transformers de features e encoders geográficos |
+| `tests/test_nb03_helpers.py` | Funções auxiliares do notebook 03 (métricas, ROI, fairness) |
 
 ---
 
-## 📋 ML Canvas
+## 📋 ML Canvas e Model Card
 
-O ML Canvas está em `docs/ml_canvas.html`, renderizado a partir de `docs/ml_canvas.json`.
+**ML Canvas** (`docs/ml_canvas.html`):
 
-**Opção 1 — Python (terminal):**
 ```bash
-cd docs
-python -m http.server 8080
+cd docs && python -m http.server 8080
+# acesse: http://localhost:8080/ml_canvas.html
 ```
-Acesse [http://localhost:8080/ml_canvas.html](http://localhost:8080/ml_canvas.html).
 
-**Opção 2 — VS Code:**
-Clique com botão direito no `ml_canvas.html` → **"Open with Live Server"**.
+**Model Card** (`docs/model_card.md`): documenta performance no test set, limitações, vieses conhecidos (gênero, contrato, senior citizen), cenários de falha e plano de monitoramento.
 
-**Exportar como PDF:**
+**Exportar Canvas como PDF:**
 ```bash
 python docs/export_pdf.py
 ```
 
 ---
 
-## 📄 Model Card
-
-`docs/model_card.md` documenta:
-- Performance no test set (Recall, Precision, F1, AUC)
-- Limitações e dados fora do escopo
-- Vieses conhecidos (gênero, contrato, senior citizen)
-- Cenários de falha e como mitigá-los
-- Plano de monitoramento com métricas, alertas e playbook
-
----
-
 ## 🐛 Troubleshooting
+
+### `run_id` não encontrado no MLflow
+
+O `run_id` em `config/config.yaml` pertence a outro ambiente. Execute `make setup` para gerar e registrar o seu próprio run automaticamente.
 
 ### Venv não ativado
 
-`run_train.py` e `run_inference.py` detectam se o venv está ativo e exibem uma mensagem clara com o comando correto antes de falhar.
+`run_train.py` e `run_inference.py` detectam se o venv está ativo e exibem uma mensagem clara com o comando correto. Para evitar, execute com `uv run`.
 
-### UnicodeEncodeError no Windows (MLflow emoji)
-
-Os scripts de treino já incluem o fix automático de encoding UTF-8. Se o erro persistir em outro terminal:
+### UnicodeEncodeError no Windows
 
 ```bash
-# Git Bash / Bash
-PYTHONIOENCODING=utf-8 python run_train.py
+# Git Bash
+PYTHONIOENCODING=utf-8 uv run python run_train.py
 
 # PowerShell
-$env:PYTHONIOENCODING='utf-8'; python run_train.py
+$env:PYTHONIOENCODING='utf-8'; uv run python run_train.py
 ```
 
 ---
@@ -464,4 +417,3 @@ $env:PYTHONIOENCODING='utf-8'; python run_train.py
 
 - **Dataset:** Telco Customer Churn — IBM (`data/raw/Telco_customer_churn.xlsx`)
 - **Tamanho:** 7.043 registros, 20 features (16 categóricas + 4 numéricas)
-- Os dados processados são gerados automaticamente ao executar `python run_train.py`.
