@@ -252,7 +252,7 @@ make inference
 
 ```bash
 make api
-# ou: uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+# ou: uv run uvicorn src.api.main:app --reload --host localhost --port 8000
 ```
 
 Acesse a documentação interativa em [http://localhost:8000/docs](http://localhost:8000/docs).
