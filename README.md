@@ -18,15 +18,14 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 2. `make env` — cria o ambiente virtual
 3. Escolha como treinar:
 
-   **Via scripts (recomendado)** — independente de notebooks:
    ```bash
-   uv run python run_experiment.py  # baselines → FE → Optuna → grava config/best_params.yaml
-   uv run python run_train.py       # lê best_params.yaml, treina MLP e materializa o modelo
+   make experiment  # baselines → FE → Optuna → grava config/best_params.yaml
+   make train       # lê best_params.yaml, treina MLP, registra no MLflow e materializa
    ```
 
-   **Via make setup** — executa o notebook 03 diretamente:
+   Ou, para apenas materializar um modelo já registrado no MLflow:
    ```bash
-   make setup  # executa notebook 03, registra no MLflow e materializa o modelo
+   make setup  # baixa artefatos do run_id em config.yaml para models/production/
    ```
 
 4. A partir daqui, escolha como servir a API:
@@ -55,17 +54,14 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 ```bash
 make env               # cria o ambiente virtual
-make setup             # treina via notebook 03, atualiza config.yaml e materializa artefatos
+make experiment        # pipeline de experimentação → grava config/best_params.yaml
+make train             # treina MLP a partir de best_params.yaml, registra e materializa
+make setup             # só materializa (baixa artefatos do run_id em config.yaml)
 make lint              # linting com ruff
 make test              # testes com pytest
-make train             # só materializa (requer run_id válido — use make setup ou run_train.py)
 make inference         # avalia o modelo no conjunto de teste
 make api               # sobe a API em http://localhost:8000
 make mlflow            # sobe MLflow UI em http://localhost:5000
-
-# Scripts standalone (não dependem de notebooks)
-uv run python run_experiment.py  # pipeline completo de experimentação → grava best_params.yaml
-uv run python run_train.py       # treina MLP a partir de best_params.yaml → registra e materializa
 ```
 
 ### Docker Compose
@@ -162,8 +158,8 @@ O projeto tem **cinco fluxos independentes:**
 
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
-| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | Notebooks Jupyter ou `run_experiment.py` |
-| 2 | [Treino](#-2-treino) | Treinar e materializar o modelo de produção | `run_train.py`, `make setup` ou Docker |
+| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | `make experiment` ou Notebooks Jupyter |
+| 2 | [Treino](#-2-treino) | Treinar e materializar o modelo de produção | `make train` ou Docker |
 | 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `make inference` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
 | 5 | [Monitoramento](#-5-monitoramento-prometheus--grafana) | Observar a API em produção | Docker Compose |
@@ -178,7 +174,7 @@ Duas formas de executar:
 
 **Via script** (recomendado para reprodutibilidade):
 ```bash
-uv run python run_experiment.py
+make experiment
 ```
 Executa baseline → FE rounds 1-3 → feature selection → RandomSearch → Optuna e grava `config/best_params.yaml` com os melhores hiperparâmetros do MLP.
 
@@ -206,28 +202,22 @@ uv run jupyter notebook
 
 > **Quando usar:** para treinar o MLP de produção e materializar os artefatos para a API.
 
-### Via script (standalone — recomendado)
+### `make train` — treino completo (recomendado)
 
 Lê `config/best_params.yaml`, recria o split com a mesma seed, treina o MLP, otimiza o threshold por ROI, registra no MLflow e materializa o modelo. **Não depende de nenhum run anterior.**
 
 ```bash
-uv run python run_train.py
+make train
 ```
 
-> **Pré-requisito:** `config/best_params.yaml` presente (já versionado no repositório). Para atualizar os hiperparâmetros com novos resultados de Optuna, execute `run_experiment.py` antes.
+> **Pré-requisito:** `config/best_params.yaml` presente (já versionado no repositório com defaults). Para atualizar os hiperparâmetros com novos resultados de Optuna, execute `make experiment` antes.
 
-### Via make setup (executa notebook 03)
+### `make setup` — só materializa
+
+Apenas baixa os artefatos de um run já registrado no MLflow para `models/production/`. Útil quando o `run_id` em `config/config.yaml` já é válido e você quer apenas servir a API.
 
 ```bash
 make setup
-```
-
-### Via make train (só materializa)
-
-Apenas baixa os artefatos de um run já registrado no MLflow. Requer `run_id` válido em `config/config.yaml`.
-
-```bash
-make train
 ```
 
 ### Docker
