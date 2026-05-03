@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+import warnings
 from functools import partial
 from pathlib import Path
 
@@ -43,6 +44,17 @@ CONFIG_PATH = BASE_DIR / "config" / "config.yaml"
 BEST_PARAMS_PATH = BASE_DIR / "config" / "best_params.yaml"
 
 sys.path.insert(0, str(BASE_DIR))
+
+warnings.filterwarnings("ignore", category=FutureWarning, module="sklearn")
+warnings.filterwarnings(
+    "ignore", message=".*max_iter.*was reached.*", category=UserWarning
+)
+try:
+    from sklearn.exceptions import ConvergenceWarning
+
+    warnings.filterwarnings("ignore", category=ConvergenceWarning)
+except ImportError:
+    pass
 
 import mlflow
 import numpy as np
@@ -165,10 +177,10 @@ XGB_OPTUNA_SEARCH_SPACE = {
 }
 
 _SMOKE_TEST = os.environ.get("EXPERIMENT_SMOKE_TEST") == "1"
-OPTUNA_TIMEOUT_SECONDS = 30 if _SMOKE_TEST else 3600
-OPTUNA_CONVERGENCE_PATIENCE = 3 if _SMOKE_TEST else 50
+OPTUNA_TIMEOUT_SECONDS = 30 if _SMOKE_TEST else 600
+OPTUNA_CONVERGENCE_PATIENCE = 3 if _SMOKE_TEST else 30
 OPTUNA_CONVERGENCE_MIN_IMPROVEMENT = 5e-3
-_RANDOMSEARCH_N_ITER = 3 if _SMOKE_TEST else 100
+_RANDOMSEARCH_N_ITER = 3 if _SMOKE_TEST else 50
 _CV_N_SPLITS = 2 if _SMOKE_TEST else None  # None = usa config.yaml
 
 
@@ -215,9 +227,8 @@ def _build_baseline_models(fe_params: dict, preprocessor, y_ref) -> dict:
         "LogisticRegression": _pipe(
             LogisticRegression(
                 C=0.1,
-                max_iter=500,
-                solver="saga",
-                n_jobs=-1,
+                max_iter=2000,
+                solver="lbfgs",
                 random_state=42,
             )
         ),
@@ -427,7 +438,7 @@ def run_feature_selection(X_tv, y_tv, cv, scoring) -> None:
             (
                 "LogisticRegression",
                 LogisticRegression(
-                    C=0.1, max_iter=500, solver="saga", n_jobs=-1, random_state=42
+                    C=0.1, max_iter=2000, solver="lbfgs", random_state=42
                 ),
             ),
             (

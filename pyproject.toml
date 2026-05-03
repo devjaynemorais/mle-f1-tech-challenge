@@ -47,6 +47,8 @@ filterwarnings = [
     "ignore:Features.*are constant:UserWarning:sklearn",
     "ignore:divide by zero encountered in divide:RuntimeWarning:sklearn",
     "ignore:vert.*deprecated:PendingDeprecationWarning:seaborn",
+    "ignore:n_jobs.*no effect:FutureWarning:sklearn",
+    "ignore::sklearn.exceptions.ConvergenceWarning",
 ]
 
 [tool.black]
