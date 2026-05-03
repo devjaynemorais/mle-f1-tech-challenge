@@ -194,11 +194,12 @@ def main() -> None:
         cltv=meta_test["CLTV"].values,
         threshold=production_threshold,
         activation_cost=float(prod_params["activation_cost"]),
+        retention_values=[0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50],
     )
     print(f"  PR-AUC  : {holdout_metrics.get('pr_auc', 0):.4f}")
     print(f"  ROC-AUC : {holdout_metrics.get('roc_auc', 0):.4f}")
     print(f"  Recall  : {holdout_metrics.get('recall', 0):.4f}")
-    print(f"  F1      : {holdout_metrics.get('f1', 0):.4f}")
+    print(f"  F1      : {holdout_metrics.get('f1_score', 0):.4f}")
 
     print("\n[5/6] Registrando modelo no MLflow...")
     with start_experiment_run(

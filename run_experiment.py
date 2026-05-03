@@ -164,9 +164,12 @@ XGB_OPTUNA_SEARCH_SPACE = {
     "model__reg_lambda": {"low": 2.0, "high": 10.0, "step": 2.0},
 }
 
-OPTUNA_TIMEOUT_SECONDS = 3600
-OPTUNA_CONVERGENCE_PATIENCE = 50
+_SMOKE_TEST = os.environ.get("EXPERIMENT_SMOKE_TEST") == "1"
+OPTUNA_TIMEOUT_SECONDS = 30 if _SMOKE_TEST else 3600
+OPTUNA_CONVERGENCE_PATIENCE = 3 if _SMOKE_TEST else 50
 OPTUNA_CONVERGENCE_MIN_IMPROVEMENT = 5e-3
+_RANDOMSEARCH_N_ITER = 3 if _SMOKE_TEST else 100
+_CV_N_SPLITS = 2 if _SMOKE_TEST else None  # None = usa config.yaml
 
 
 # ---------------------------------------------------------------------------
@@ -355,30 +358,26 @@ def run_fe_round(
                 log_metrics_safe(metrics)
 
 
+# zip_region e geo_cluster omitidos: requerem Latitude/Longitude/Zip Code,
+# colunas ausentes no interim CSV gerado por process_data().
 _ROUND3_STRATEGY_SPECS = {
     "LogisticRegression": [
         ("drop", "lr_drop"),
         ("frequency", "lr_frequency"),
         ("target", "lr_target"),
         ("risk_band", "lr_risk_band"),
-        ("zip_region", "lr_zip_region"),
-        ("geo_cluster", "lr_geo_cluster"),
     ],
     "XGBoost": [
         ("drop", "xgb_drop"),
         ("frequency", "xgb_frequency"),
         ("target", "xgb_target"),
         ("risk_band", "xgb_risk_band"),
-        ("zip_region", "xgb_zip_region"),
-        ("geo_cluster", "xgb_geo_cluster"),
     ],
     "MLP": [
         ("drop", "mlp_drop"),
         ("frequency", "mlp_frequency"),
         ("target", "mlp_target"),
         ("risk_band", "mlp_risk_band"),
-        ("zip_region", "mlp_zip_region"),
-        ("geo_cluster", "mlp_geo_cluster"),
         ("city_embedding", "mlp_city_embedding"),
     ],
 }
@@ -490,7 +489,7 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
     preprocessor = build_default_preprocessor()
 
     # MLP
-    print("\n[RandomSearch] MLP (n_iter=100)...")
+    print(f"\n[RandomSearch] MLP (n_iter={_RANDOMSEARCH_N_ITER})...")
     mlp_pipeline = Pipeline(
         [
             ("fe", FeatureEngineerTransformer(**DEFAULT_ROUND4_FE_PARAMS)),
@@ -516,7 +515,7 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
     mlp_search = RandomizedSearchCV(
         mlp_pipeline,
         MLP_PARAM_DISTRIBUTIONS,
-        n_iter=100,
+        n_iter=_RANDOMSEARCH_N_ITER,
         cv=cv,
         scoring=scoring,
         refit="pr_auc",
@@ -525,8 +524,8 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
         return_train_score=False,
     )
     mlp_search.fit(X_tv, y_tv)
-    mlp_results = summarize_grid_search_results(mlp_search)
-    best_mlp_rs = mlp_results.iloc[0]
+    best_mlp_rs = summarize_grid_search_results(mlp_search, "MLP")
+    mlp_results_df = pd.DataFrame([best_mlp_rs])
     print(f"  Melhor PR-AUC: {best_mlp_rs.get('pr_auc_mean', 0):.4f}")
 
     with start_experiment_run(
@@ -534,11 +533,13 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
         "randomsearch_mlp",
         tags={"phase": "tuning_stage1", "model_name": "MLP"},
     ):
-        log_dataframe_artifact(mlp_results, "mlp_randomsearch_results.csv")
-        log_metrics_safe(best_row_to_metrics(best_mlp_rs))
+        log_dataframe_artifact(mlp_results_df, "mlp_randomsearch_results.csv")
+        log_metrics_safe(
+            {k: v for k, v in best_mlp_rs.items() if isinstance(v, (int, float))}
+        )
 
     # XGBoost
-    print("\n[RandomSearch] XGBoost (n_iter=100)...")
+    print(f"\n[RandomSearch] XGBoost (n_iter={_RANDOMSEARCH_N_ITER})...")
     xgb_pipeline = Pipeline(
         [
             ("fe", FeatureEngineerTransformer(**DEFAULT_ROUND4_FE_PARAMS)),
@@ -559,7 +560,7 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
     xgb_search = RandomizedSearchCV(
         xgb_pipeline,
         XGB_PARAM_DISTRIBUTIONS,
-        n_iter=100,
+        n_iter=_RANDOMSEARCH_N_ITER,
         cv=cv,
         scoring=scoring,
         refit="pr_auc",
@@ -568,8 +569,19 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
         return_train_score=False,
     )
     xgb_search.fit(X_tv, y_tv)
-    xgb_results = summarize_grid_search_results(xgb_search)
-    best_xgb_rs = xgb_results.iloc[0]
+    best_idx = xgb_search.best_index_
+    cv_res = xgb_search.cv_results_
+    best_xgb_rs = {
+        "model": "XGBoost",
+        "pr_auc_mean": float(cv_res["mean_test_pr_auc"][best_idx]),
+        "roc_auc_mean": float(cv_res["mean_test_roc_auc"][best_idx]),
+        "recall_mean": float(cv_res["mean_test_recall"][best_idx]),
+        "precision_mean": float(cv_res["mean_test_precision"][best_idx]),
+        "f1_mean": float(cv_res["mean_test_f1"][best_idx]),
+        "fit_time_mean_s": float(cv_res["mean_fit_time"][best_idx]),
+        **{k: v for k, v in xgb_search.best_params_.items()},
+    }
+    xgb_results_df = pd.DataFrame([best_xgb_rs])
     print(f"  Melhor PR-AUC: {best_xgb_rs.get('pr_auc_mean', 0):.4f}")
 
     with start_experiment_run(
@@ -577,8 +589,10 @@ def run_random_search(X_tv, y_tv, cv, scoring) -> None:
         "randomsearch_xgboost",
         tags={"phase": "tuning_stage1", "model_name": "XGBoost"},
     ):
-        log_dataframe_artifact(xgb_results, "xgb_randomsearch_results.csv")
-        log_metrics_safe(best_row_to_metrics(best_xgb_rs))
+        log_dataframe_artifact(xgb_results_df, "xgb_randomsearch_results.csv")
+        log_metrics_safe(
+            {k: v for k, v in best_xgb_rs.items() if isinstance(v, (int, float))}
+        )
 
 
 def run_optuna(X_tv, y_tv, cv, scoring) -> tuple[dict, dict]:
@@ -724,8 +738,9 @@ def main() -> None:
     )
     print(f"  train/val: {len(X_tv)} | test: {len(X_test)}")
 
+    n_splits = _CV_N_SPLITS if _CV_N_SPLITS else config["validation"]["n_splits"]
     cv = build_default_cv(
-        n_splits=config["validation"]["n_splits"],
+        n_splits=n_splits,
         random_state=int(config["experiment"]["random_state"]),
     )
     scoring = build_default_scoring()
