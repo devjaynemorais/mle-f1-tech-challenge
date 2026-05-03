@@ -217,145 +217,145 @@ Durante experimentação, priorizar métricas threshold-independent (PR AUC / RO
 
 ---
 
-## 7. M?tricas Econ?micas Utilizadas
+## 7. Métricas Econômicas Utilizadas
 
-Esta se??o define as m?tricas econ?micas adotadas para avaliar campanhas de reten??o baseadas nas previs?es do modelo. O objetivo ? traduzir a matriz de confus?o em impacto financeiro, separando valor recuperado, valor perdido, custo operacional, desperd?cio com falsos positivos e retorno sobre o investimento.
+Esta seção define as métricas econômicas adotadas para avaliar campanhas de retenção baseadas nas previsões do modelo. O objetivo é traduzir a matriz de confusão em impacto financeiro, separando valor recuperado, valor perdido, custo operacional, desperdício com falsos positivos e retorno sobre o investimento.
 
 ### 7.1 Premissas
 
-As defini??es abaixo assumem:
+As definições abaixo assumem:
 
-* a campanha ? acionada para todos os clientes preditos como churn;
+* a campanha é acionada para todos os clientes preditos como churn;
 * `TP + FP` representa o total de clientes acionados;
 * `p_i` representa a probabilidade prevista de churn para o cliente `i`;
 * `CLTV_i` representa o valor do cliente `i`;
-* a taxa de reten??o da campanha representa a propor??o esperada de churners efetivamente retidos ap?s o acionamento;
-* o custo operacional da campanha ? modelado como um **custo por acionamento**;
-* o cen?rio base adota `custo_acionamento = 50` e `taxa_de_reten??o = 0.10`.
+* a taxa de retenção da campanha representa a proporção esperada de churners efetivamente retidos após o acionamento;
+* o custo operacional da campanha é modelado como um **custo por acionamento**;
+* o cenário base adota `custo_acionamento = 50` e `taxa_de_retencao = 0.10`.
 
-### 7.2 Valor em Risco Recuper?vel
+### 7.2 Valor em Risco Recuperável
 
-**Defini??o**
+**Definição**
 
 Valor financeiro em risco dentro do subconjunto de churners corretamente identificados pelo modelo.
 
-**F?rmula**
+**Fórmula**
 
-`VR = ? (p_i x CLTV_i), para i em TP`
+`VR = Σ (p_i x CLTV_i), para i em TP`
 
-**Interpreta??o**
+**Interpretação**
 
-Representa o montante potencialmente recuper?vel entre os clientes que o modelo decidiu acionar e que de fato pertencem ? classe churn.
+Representa o montante potencialmente recuperável entre os clientes que o modelo decidiu acionar e que de fato pertencem à classe churn.
 
 ### 7.3 Valor Recuperado Esperado
 
-**Defini??o**
+**Definição**
 
-Valor esperado recuperado pela campanha ap?s considerar a taxa de reten??o.
+Valor esperado recuperado pela campanha após considerar a taxa de retenção.
 
-**F?rmula**
+**Fórmula**
 
-`Vrec = VR x taxa_de_reten??o`
+`Vrec = VR x taxa_de_retencao`
 
-**Interpreta??o**
+**Interpretação**
 
-Nem todo churner acionado ser? salvo. Por isso, o valor recuperado esperado corresponde apenas ? fra??o do valor em risco que, em m?dia, a campanha consegue preservar.
+Nem todo churner acionado será salvo. Por isso, o valor recuperado esperado corresponde apenas à fração do valor em risco que, em média, a campanha consegue preservar.
 
 ### 7.4 Valor Perdido
 
-**Defini??o**
+**Definição**
 
 Valor esperado perdido em churners reais que ficaram fora da campanha por erro do modelo.
 
-**F?rmula**
+**Fórmula**
 
-`VP = ? (p_i x CLTV_i), para i em FN`
+`VP = Σ (p_i x CLTV_i), para i em FN`
 
-**Interpreta??o**
+**Interpretação**
 
-Corresponde ? oportunidade perdida causada por falsos negativos: clientes que churnariam, mas n?o foram acionados porque o modelo os classificou como n?o churn.
+Corresponde à oportunidade perdida causada por falsos negativos: clientes que churnariam, mas não foram acionados porque o modelo os classificou como não churn.
 
 ### 7.5 Custo por Acionamento
 
-**Defini??o**
+**Definição**
 
-Custo unit?rio assumido para abordar um cliente dentro da campanha de reten??o.
+Custo unitário assumido para abordar um cliente dentro da campanha de retenção.
 
-**F?rmula**
+**Fórmula**
 
 `CMCA = custo_acionamento`
 
-**Interpreta??o**
+**Interpretação**
 
-O custo m?dio por cliente acionado deixa de ser um rateio de budget fixo e passa a representar um custo operacional constante por contato.
+O custo médio por cliente acionado deixa de ser um rateio de budget fixo e passa a representar um custo operacional constante por contato.
 
 ### 7.6 Custo Total da Campanha
 
-**Defini??o**
+**Definição**
 
-Investimento total necess?rio para executar a campanha no threshold analisado.
+Investimento total necessário para executar a campanha no threshold analisado.
 
-**F?rmula**
+**Fórmula**
 
 `custo_total_campanha = (TP + FP) x custo_acionamento`
 
-**Interpreta??o**
+**Interpretação**
 
-Quanto mais clientes o modelo decide acionar, maior o custo total da campanha. Isso introduz um trade-off econ?mico expl?cito entre cobertura e desperd?cio operacional.
+Quanto mais clientes o modelo decide acionar, maior o custo total da campanha. Isso introduz um trade-off econômico explícito entre cobertura e desperdício operacional.
 
-### 7.7 Valor Desperdi?ado com Falsos Positivos
+### 7.7 Valor Desperdiçado com Falsos Positivos
 
-**Defini??o**
+**Definição**
 
 Parcela do investimento da campanha consumida com clientes acionados desnecessariamente.
 
-**F?rmula**
+**Fórmula**
 
 `VD = FP x custo_acionamento`
 
-**Interpreta??o**
+**Interpretação**
 
-Mede o desperd?cio operacional gerado por falsos positivos: clientes que receberam esfor?o de reten??o, mas que n?o churnariam de qualquer forma.
+Mede o desperdício operacional gerado por falsos positivos: clientes que receberam esforço de retenção, mas que não churnariam de qualquer forma.
 
-### 7.8 Impacto Econ?mico L?quido
+### 7.8 Impacto Econômico Líquido
 
-**Defini??o**
+**Definição**
 
-Saldo econ?mico da estrat?gia considerando valor recuperado, valor perdido e custo total de acionamento.
+Saldo econômico da estratégia considerando valor recuperado, valor perdido e custo total de acionamento.
 
-**F?rmula**
+**Fórmula**
 
 `IEL = Vrec - VP - custo_total_campanha`
 
-**Interpreta??o**
+**Interpretação**
 
-Esta m?trica mostra se a pol?tica de acionamento induzida pelo modelo est? protegendo valor suficiente para compensar tanto a omiss?o de churners quanto o custo operacional da campanha.
+Esta métrica mostra se a política de acionamento induzida pelo modelo está protegendo valor suficiente para compensar tanto a omissão de churners quanto o custo operacional da campanha.
 
 ### 7.9 ROI da Campanha
 
-**Defini??o**
+**Definição**
 
 Retorno sobre o investimento total da campanha, considerando o valor recuperado, a perda por falsos negativos e o custo total de acionamento.
 
-**F?rmula**
+**Fórmula**
 
 `ROI = (Vrec - VP - custo_total_campanha) / custo_total_campanha`
 
-**Interpreta??o**
+**Interpretação**
 
-O ROI responde se, depois de descontar o custo integral de acionar os clientes previstos como churn, a estrat?gia baseada no modelo ainda gera retorno financeiro positivo.
+O ROI responde se, depois de descontar o custo integral de acionar os clientes previstos como churn, a estratégia baseada no modelo ainda gera retorno financeiro positivo.
 
-### 7.10 Papel de Cada C?lula da Matriz de Confus?o
+### 7.10 Papel de Cada Célula da Matriz de Confusão
 
-* `TP`: concentram o valor recuper?vel e alimentam `VR` e `Vrec`.
+* `TP`: concentram o valor recuperável e alimentam `VR` e `Vrec`.
 * `FP`: aumentam o custo total da campanha e alimentam `VD`.
 * `FN`: representam oportunidade perdida e alimentam `VP`.
-* `TN`: n?o geram recupera??o nem custo direto na formula??o atual.
+* `TN`: não geram recuperação nem custo direto na formulação atual.
 
 ### 7.11 Uso Recomendado no Notebook de Modelo Final
 
-No notebook de consolida??o do modelo MVP, recomenda-se:
+No notebook de consolidação do modelo MVP, recomenda-se:
 
 * comparar os modelos no holdout com base em `Vrec`, `VP`, `VD`, `IEL`, `ROI` e `custo_total_campanha`;
-* analisar o efeito do threshold padr?o (`0.5`) versus threshold otimizado;
-* testar sensibilidade do resultado econ?mico a diferentes premissas de taxa de reten??o e custo por acionamento.
+* analisar o efeito do threshold padrão (`0.5`) versus threshold otimizado;
+* testar sensibilidade do resultado econômico a diferentes premissas de taxa de retencao e custo por acionamento.
