@@ -137,7 +137,6 @@ def _ensure_mlflow_ui(db_uri: str) -> None:
         ],
         stdout=_sp.DEVNULL,
         stderr=_sp.DEVNULL,
-        cwd=str(BASE_DIR),
     )
     time.sleep(2)
     print(f"  MLflow UI iniciado em http://localhost:{MLFLOW_PORT}")
@@ -774,7 +773,7 @@ def main() -> None:
         raw_uri, workspace_root=BASE_DIR
     )
     mlflow.set_tracking_uri(tracking_uri)
-    _ensure_mlflow_ui(raw_uri)
+    _ensure_mlflow_ui(tracking_uri)
 
     print("\n[0/7] Preparando dados...")
     interim_path = BASE_DIR / config["data"]["interim_path"]
