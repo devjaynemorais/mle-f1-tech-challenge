@@ -2,6 +2,9 @@
 set -e
 
 case "$1" in
+  experiment)
+    exec python run_experiment.py
+    ;;
   train)
     exec python run_train.py
     ;;

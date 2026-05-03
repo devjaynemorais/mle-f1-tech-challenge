@@ -1,5 +1,5 @@
 .PHONY: env lint test experiment setup train inference api mlflow \
-        compose-build compose-up compose-train compose-down compose-monitoring compose-full
+        compose-build compose-up compose-experiment compose-train compose-down compose-monitoring compose-full
 
 env:
 	uv sync --extra dev
@@ -31,6 +31,10 @@ mlflow:
 # --- Docker Compose ---
 compose-build:
 	docker compose build
+
+compose-experiment:
+	docker compose up -d mlflow
+	docker compose run --rm experiment
 
 compose-train:
 	docker compose up -d mlflow

@@ -134,7 +134,7 @@ def main() -> None:
     split_params = best_params["split"]
     prod_params = best_params["production"]
 
-    tracking_uri = resolve_tracking_uri(
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI") or resolve_tracking_uri(
         config["mlflow"]["tracking_uri"], workspace_root=BASE_DIR
     )
     mlflow.set_tracking_uri(tracking_uri)

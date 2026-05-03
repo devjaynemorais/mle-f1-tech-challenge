@@ -726,7 +726,7 @@ def write_best_params(mlp_params: dict, config: dict) -> None:
 def main() -> None:
     config = _load_config()
 
-    tracking_uri = resolve_tracking_uri(
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI") or resolve_tracking_uri(
         config["mlflow"]["tracking_uri"], workspace_root=BASE_DIR
     )
     mlflow.set_tracking_uri(tracking_uri)
