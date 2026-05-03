@@ -1,0 +1,24 @@
+# Gerado por run_experiment.py após tuning com Optuna.
+# Commitado no git — representa os melhores hiperparâmetros encontrados.
+# run_train.py lê este arquivo para treinar o modelo de produção de forma
+# independente, sem precisar que run_experiment.py tenha sido executado antes.
+#
+# Para atualizar: execute run_experiment.py e commite o resultado.
+
+split:
+  random_state: 42
+  test_size: 0.30
+
+mlp_optuna:
+  selector__k: 20
+  model__activation: relu
+  model__hidden_dim: 128
+  model__dropout: 0.3
+  model__lr: 0.001
+  model__weight_decay: 0.0001
+  model__batch_size: 64
+
+production:
+  threshold: 0.35
+  activation_cost: 50.0
+  retention_rate: 0.10
