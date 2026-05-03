@@ -355,22 +355,65 @@ def run_fe_round(
                 log_metrics_safe(metrics)
 
 
+_ROUND3_STRATEGY_SPECS = {
+    "LogisticRegression": [
+        ("drop", "lr_drop"),
+        ("frequency", "lr_frequency"),
+        ("target", "lr_target"),
+        ("risk_band", "lr_risk_band"),
+        ("zip_region", "lr_zip_region"),
+        ("geo_cluster", "lr_geo_cluster"),
+    ],
+    "XGBoost": [
+        ("drop", "xgb_drop"),
+        ("frequency", "xgb_frequency"),
+        ("target", "xgb_target"),
+        ("risk_band", "xgb_risk_band"),
+        ("zip_region", "xgb_zip_region"),
+        ("geo_cluster", "xgb_geo_cluster"),
+    ],
+    "MLP": [
+        ("drop", "mlp_drop"),
+        ("frequency", "mlp_frequency"),
+        ("target", "mlp_target"),
+        ("risk_band", "mlp_risk_band"),
+        ("zip_region", "mlp_zip_region"),
+        ("geo_cluster", "mlp_geo_cluster"),
+        ("city_embedding", "mlp_city_embedding"),
+    ],
+}
+
+
 def run_round3_city_encoding(X_tv, y_tv, cv, scoring) -> None:
-    """Fase 4: testa estratégias de City encoding."""
-    print("\n[Round 3 City Encoding] Avaliando estratégias geoespaciais...")
-    results = evaluate_round3_model_strategies(
-        X=X_tv,
-        y=y_tv,
-        cv=cv,
-        scoring=scoring,
-    )
+    """Fase 4: testa estratégias de City encoding para cada modelo."""
+    preprocessor = build_default_preprocessor()
+    all_summaries = []
+
+    for model_name, strategy_specs in _ROUND3_STRATEGY_SPECS.items():
+        print(f"\n[Round 3 City Encoding] {model_name}...")
+        summary_df, _ = evaluate_round3_model_strategies(
+            model_name,
+            strategy_specs,
+            X=X_tv,
+            y=y_tv,
+            cv=cv,
+            scoring=scoring,
+            preprocessor=preprocessor,
+            fe_params=ROUND2_FE_PARAMS,
+            y_reference=y_tv,
+        )
+        all_summaries.append(summary_df)
+        best = summary_df.sort_values("pr_auc_mean", ascending=False).iloc[0]
+        print(f"  melhor: {best.get('strategy', '')}  PR-AUC={best['pr_auc_mean']:.4f}")
+
+    results = pd.concat(all_summaries, ignore_index=True)
     with start_experiment_run(
         MLFLOW_EXPERIMENTS["round3_city_encoding"],
         "round3_city_encoding",
         tags={"phase": "round3_city_encoding"},
     ):
         log_dataframe_artifact(results, "round3_city_encoding_results.csv")
-    print(f"  {len(results)} combinações avaliadas")
+    print(f"  {len(results)} combinações avaliadas no total")
 
 
 def run_feature_selection(X_tv, y_tv, cv, scoring) -> None:
