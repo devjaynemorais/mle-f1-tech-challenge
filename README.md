@@ -10,13 +10,25 @@ O projeto cobre EDA, modelagem com Scikit-Learn (MLP + Optuna), rastreamento de 
 
 > **Leia antes de executar qualquer comando.**
 
-O `make train` e o `make compose-train` **não treinam o modelo** — eles materializam localmente um modelo já registrado no MLflow para ser servido pela API. O treinamento, o registro no MLflow e a atualização do `config.yaml` são feitos automaticamente pelo `make setup`.
+O `make train` e o `make compose-train` **não treinam o modelo** — eles materializam localmente um modelo já registrado no MLflow para ser servido pela API. O treinamento completo é feito por `make setup` (via notebooks) ou por `run_experiment.py` + `run_train.py` (via scripts).
 
 **Passos obrigatórios, em ordem:**
 
 1. Coloque os dados brutos em `data/raw/Telco_customer_churn.xlsx`
 2. `make env` — cria o ambiente virtual
-3. `make setup` — executa o notebook 03, registra o run no MLflow, atualiza `config/config.yaml` e materializa o modelo em `models/production/`
+3. Escolha como treinar:
+
+   **Via scripts (recomendado)** — independente de notebooks:
+   ```bash
+   uv run python run_experiment.py  # baselines → FE → Optuna → grava config/best_params.yaml
+   uv run python run_train.py       # lê best_params.yaml, treina MLP e materializa o modelo
+   ```
+
+   **Via make setup** — executa o notebook 03 diretamente:
+   ```bash
+   make setup  # executa notebook 03, registra no MLflow e materializa o modelo
+   ```
+
 4. A partir daqui, escolha como servir a API:
 
    **Opção A — local** (usa o código e modelo do host diretamente):
@@ -43,13 +55,17 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 ```bash
 make env               # cria o ambiente virtual
-make setup             # treina o modelo, atualiza config.yaml e materializa os artefatos
+make setup             # treina via notebook 03, atualiza config.yaml e materializa artefatos
 make lint              # linting com ruff
 make test              # testes com pytest
-make train             # só materializa (requer run_id válido — use make setup)
+make train             # só materializa (requer run_id válido — use make setup ou run_train.py)
 make inference         # avalia o modelo no conjunto de teste
 make api               # sobe a API em http://localhost:8000
 make mlflow            # sobe MLflow UI em http://localhost:5000
+
+# Scripts standalone (não dependem de notebooks)
+uv run python run_experiment.py  # pipeline completo de experimentação → grava best_params.yaml
+uv run python run_train.py       # treina MLP a partir de best_params.yaml → registra e materializa
 ```
 
 ### Docker Compose
@@ -78,29 +94,32 @@ make compose-down       # para tudo
 
 ```
 .
-├── config/           # Configuração YAML (features, modelo, MLflow, produção)
+├── config/
+│   ├── config.yaml        # Configuração principal (features, modelo, MLflow, produção)
+│   └── best_params.yaml   # Melhores hiperparâmetros do MLP (gerado por run_experiment.py, versionado)
 ├── data/
-│   ├── raw/          # Dados brutos imutáveis (Telco_customer_churn.xlsx)
-│   ├── interim/      # Dados limpos intermediários
-│   └── processed/    # Dados prontos para modelagem (train/test)
-├── docs/             # ML Canvas, Model Card, documentação
+│   ├── raw/               # Dados brutos imutáveis (Telco_customer_churn.xlsx)
+│   ├── interim/           # Dados limpos intermediários
+│   └── processed/         # Dados prontos para modelagem (train/test)
+├── docs/                  # ML Canvas, Model Card, documentação
 ├── models/
-│   └── production/   # Artefatos do modelo de produção (gerados por make train)
-├── notebooks/        # Notebooks de experimentação e análise
+│   └── production/        # Artefatos do modelo de produção (gerados por run_train.py)
+├── notebooks/             # Notebooks de experimentação e análise
 ├── src/
-│   ├── api/          # FastAPI: main.py, schemas.py, predictor.py
-│   ├── data/         # Carga e limpeza dos dados brutos
-│   ├── features/     # Engenharia de features e encoders
-│   ├── models/       # Treino, produção e predição
-│   ├── evaluation/   # Métricas técnicas (compute_metrics)
-│   └── utils/        # Logging, EDA, plots, estatísticas
-├── tests/            # Testes automatizados com pytest
-├── Dockerfile        # Imagem Docker — treino, inferência e API via entrypoint.sh
+│   ├── api/               # FastAPI: main.py, schemas.py, predictor.py
+│   ├── data/              # Carga e limpeza dos dados brutos
+│   ├── features/          # Engenharia de features e encoders
+│   ├── models/            # Treino, produção e predição
+│   ├── evaluation/        # Métricas técnicas (compute_metrics)
+│   └── utils/             # Logging, EDA, plots, estatísticas
+├── tests/                 # Testes automatizados com pytest
+├── Dockerfile             # Imagem Docker — treino, inferência e API via entrypoint.sh
 ├── docker-compose.yml
-├── entrypoint.sh     # Roteador de modo: train | inference | api | mlflow
-├── Makefile          # Atalhos para todos os comandos do projeto
-├── run_train.py      # Materializa o modelo de produção a partir do MLflow
-└── run_inference.py  # Avalia o modelo no conjunto de teste
+├── entrypoint.sh          # Roteador de modo: train | inference | api | mlflow
+├── Makefile               # Atalhos para todos os comandos do projeto
+├── run_experiment.py      # Pipeline de experimentação (baseline → FE → Optuna) → best_params.yaml
+├── run_train.py           # Treina MLP a partir de best_params.yaml, registra no MLflow e materializa
+└── run_inference.py       # Avalia o modelo no conjunto de teste
 ```
 
 ---
@@ -143,8 +162,8 @@ O projeto tem **cinco fluxos independentes:**
 
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
-| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | Notebooks Jupyter |
-| 2 | [Treino](#-2-treino) | Materializar o modelo de produção | `make train` ou Docker |
+| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | Notebooks Jupyter ou `run_experiment.py` |
+| 2 | [Treino](#-2-treino) | Treinar e materializar o modelo de produção | `run_train.py`, `make setup` ou Docker |
 | 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `make inference` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
 | 5 | [Monitoramento](#-5-monitoramento-prometheus--grafana) | Observar a API em produção | Docker Compose |
@@ -155,6 +174,15 @@ O projeto tem **cinco fluxos independentes:**
 
 > **Quando usar:** fase de exploração — análise de dados, engenharia de features, comparação de modelos e decisão do campeão.
 
+Duas formas de executar:
+
+**Via script** (recomendado para reprodutibilidade):
+```bash
+uv run python run_experiment.py
+```
+Executa baseline → FE rounds 1-3 → feature selection → RandomSearch → Optuna e grava `config/best_params.yaml` com os melhores hiperparâmetros do MLP.
+
+**Via notebooks** (para análise interativa):
 ```bash
 uv run jupyter notebook
 ```
@@ -176,16 +204,30 @@ uv run jupyter notebook
 
 ## 🏭 2. Treino
 
-> **Quando usar:** após executar o notebook 03 e atualizar o `run_id` no `config.yaml`.
->
-> **O que faz:** conecta ao MLflow, baixa os artefatos do run de produção e os grava em `models/production/` para uso da API.  
-> **Pré-requisito:** `run_id` válido em `config/config.yaml` — veja [Para Rodar o Pipeline Completo](#️-para-rodar-o-pipeline-completo).
+> **Quando usar:** para treinar o MLP de produção e materializar os artefatos para a API.
 
-### Local
+### Via script (standalone — recomendado)
+
+Lê `config/best_params.yaml`, recria o split com a mesma seed, treina o MLP, otimiza o threshold por ROI, registra no MLflow e materializa o modelo. **Não depende de nenhum run anterior.**
+
+```bash
+uv run python run_train.py
+```
+
+> **Pré-requisito:** `config/best_params.yaml` presente (já versionado no repositório). Para atualizar os hiperparâmetros com novos resultados de Optuna, execute `run_experiment.py` antes.
+
+### Via make setup (executa notebook 03)
+
+```bash
+make setup
+```
+
+### Via make train (só materializa)
+
+Apenas baixa os artefatos de um run já registrado no MLflow. Requer `run_id` válido em `config/config.yaml`.
 
 ```bash
 make train
-# ou: uv run python run_train.py
 ```
 
 ### Docker
