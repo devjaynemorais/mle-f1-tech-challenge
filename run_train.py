@@ -44,6 +44,7 @@ import mlflow
 import pandas as pd
 import yaml
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 from src.data.make_dataset import process_data
 from src.utils.exp import (
@@ -139,18 +140,34 @@ def main() -> None:
     )
     mlflow.set_tracking_uri(tracking_uri)
 
-    print("\n[1/6] Preparando dados...")
+    phases = tqdm(
+        [
+            "dados",
+            "pipeline",
+            "OOF+threshold",
+            "treino final",
+            "MLflow",
+            "materializar",
+        ],
+        desc="make train",
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+    )
+
+    phases.set_description("[1/6] dados")
     _, X, y, meta = _prepare_data(config)
     X_tv, X_test, y_tv, y_test, meta_tv, meta_test = _split(X, y, meta, split_params)
-    print(f"  train/val: {len(X_tv)} | test: {len(X_test)}")
+    print(f"\n  train/val: {len(X_tv)} | test: {len(X_test)}")
+    phases.update(1)
 
-    print("\n[2/6] Construindo pipeline MLP Optuna...")
+    phases.set_description("[2/6] pipeline")
     pipeline = build_optuna_mlp_pipeline(mlp_params)
     cv = build_default_cv(
         n_splits=config["validation"]["n_splits"],
         random_state=int(split_params["random_state"]),
     )
-    print("\n[3/6] Gerando predicoes OOF para otimizacao de threshold...")
+    phases.update(1)
+
+    phases.set_description("[3/6] OOF + threshold")
     oof_df = generate_oof_predictions(
         estimator=pipeline,
         X=X_tv,
@@ -168,10 +185,11 @@ def main() -> None:
         retention_rate=float(prod_params["retention_rate"]),
     )
     best_threshold = float(best_threshold_row["threshold"])
-    print(f"  threshold otimo (ROI): {best_threshold:.2f}")
+    print(f"\n  threshold otimo (ROI): {best_threshold:.2f}")
     print(f"  threshold producao fixo: {prod_params['threshold']}")
+    phases.update(1)
 
-    print("\n[4/6] Treinando modelo final no train/val completo...")
+    phases.set_description("[4/6] treino final")
     production_threshold = float(prod_params["threshold"])
     final_estimator, holdout_df = fit_final_estimator_and_generate_predictions(
         estimator=pipeline,
@@ -196,12 +214,13 @@ def main() -> None:
         activation_cost=float(prod_params["activation_cost"]),
         retention_values=[0.05, 0.10, 0.15, 0.20, 0.30, 0.40, 0.50],
     )
-    print(f"  PR-AUC  : {holdout_metrics.get('pr_auc', 0):.4f}")
+    print(f"\n  PR-AUC  : {holdout_metrics.get('pr_auc', 0):.4f}")
     print(f"  ROC-AUC : {holdout_metrics.get('roc_auc', 0):.4f}")
     print(f"  Recall  : {holdout_metrics.get('recall', 0):.4f}")
     print(f"  F1      : {holdout_metrics.get('f1_score', 0):.4f}")
+    phases.update(1)
 
-    print("\n[5/6] Registrando modelo no MLflow...")
+    phases.set_description("[5/6] MLflow")
     with start_experiment_run(
         MLFLOW_EXPERIMENT,
         PRODUCTION_RUN_NAME,
@@ -230,9 +249,10 @@ def main() -> None:
         )
         run_id = run.info.run_id
 
-    print(f"  run_id: {run_id}")
+    print(f"\n  run_id: {run_id}")
+    phases.update(1)
 
-    print("\n[6/6] Atualizando config.yaml e materializando modelo...")
+    phases.set_description("[6/6] materializar")
     _update_config(run_id)
     result = subprocess.run(
         [sys.executable, "src/models/prepare_production_model.py"],
@@ -241,6 +261,8 @@ def main() -> None:
     if result.returncode != 0:
         print("Erro ao materializar o modelo. Verifique logs acima.")
         sys.exit(1)
+    phases.update(1)
+    phases.close()
 
     print("\n[+] TREINAMENTO CONCLUIDO COM SUCESSO!")
     print(f"    run_id  : {run_id}")

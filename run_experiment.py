@@ -68,6 +68,7 @@ from sklearn.model_selection import RandomizedSearchCV, cross_validate, train_te
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.tree import DecisionTreeClassifier
+from tqdm import tqdm
 
 from src.data.make_dataset import process_data
 from src.features.feature_engineer_transformer import FeatureEngineerTransformer
@@ -300,7 +301,9 @@ def run_baselines(X_tv, y_tv, meta_tv, X_test, meta_test, cv, scoring) -> str:
     ) as parent_run:
         log_split_artifacts(X_tv.index, X_test.index, meta_tv, meta_test)
 
-        for model_name, pipeline in models.items():
+        for model_name, pipeline in tqdm(
+            models.items(), desc="Baseline", unit="modelo"
+        ):
             cv_result = cross_validate(
                 pipeline,
                 X_tv,
@@ -347,7 +350,9 @@ def run_fe_round(
         round_name,
         tags={"phase": round_name},
     ):
-        for model_name, pipeline in models.items():
+        for model_name, pipeline in tqdm(
+            models.items(), desc=round_name, unit="modelo"
+        ):
             cv_result = cross_validate(
                 pipeline,
                 X_tv,
@@ -433,7 +438,7 @@ def run_feature_selection(X_tv, y_tv, cv, scoring) -> None:
 
     # SelectKBest — testa k = [10, 20, 30, 40] para LR e MLP
     rows = []
-    for k in [10, 20, 30, 40]:
+    for k in tqdm([10, 20, 30, 40], desc="Feature Selection k", unit="k"):
         for model_name, model in [
             (
                 "LogisticRegression",
