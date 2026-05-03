@@ -144,8 +144,8 @@ production:
       source:
         tracking_uri: sqlite:///mlflow.db
         experiment_name: tc-f1-nb03-MLP-production-performance
-        run_id: 378d8c479a5e44e5950d83806a2f25db
-        model_uri: runs:/378d8c479a5e44e5950d83806a2f25db/model
+        run_id: 4a53e24ff00f4cbdab6806878cee3eae
+        model_uri: runs:/4a53e24ff00f4cbdab6806878cee3eae/model
 
       local:
         artifact_dir: models/production/mlp_optuna
