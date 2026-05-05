@@ -12,7 +12,7 @@ groups:
         annotations:
           summary: "API Churn esta fora do ar"
           description: "A API nao responde ha mais de 1 minuto"
-      
+
       # Alerta: Taxa de erros alta
       - alert: HighErrorRate
         expr: |
@@ -24,7 +24,7 @@ groups:
         annotations:
           summary: "Taxa de erros acima de 5%"
           description: "{{ $value | humanizePercentage }} das requisicoes estao falhando"
-      
+
       # Alerta: Latencia alta
       - alert: HighLatency
         expr: |
@@ -37,7 +37,7 @@ groups:
         annotations:
           summary: "Latencia p95 acima de 1 segundo"
           description: "Latencia atual: {{ $value | humanizeDuration }}"
-      
+
       # Alerta: Modelo nao carregado
       - alert: ModelNotLoaded
         expr: churn_model_loaded == 0
@@ -47,3 +47,108 @@ groups:
         annotations:
           summary: "Modelo de ML nao esta carregado"
           description: "A API esta funcionando mas sem o modelo de predicao"
+
+      # Alerta: Erros de predicao
+      - alert: PredictionErrors
+        expr: rate(churn_prediction_errors_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Erros durante predicoes de churn"
+          description: "Modelo {{ $labels.model }} apresentando erros: {{ $labels.error_type }}"
+
+      # Alerta: Latencia de predicao alta
+      - alert: HighPredictionLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(churn_prediction_latency_seconds_bucket[5m])) by (le, model)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: medium
+        annotations:
+          summary: "Latencia p95 de predicao acima de 500ms"
+          description: "Modelo {{ $labels.model }} com latencia de {{ $value | humanizeDuration }}"
+
+      # Alerta: Confianca muito baixa ou muito alta
+      - alert: LowPredictionConfidence
+        expr: churn_prediction_confidence < 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Confianca media das predicoes muito baixa"
+          description: "Modelo {{ $labels.model }} com confianca media de {{ $value | humanizePercentage }}"
+
+      # Alerta: Muitas predicoes em curto periodo (possivel pico de uso)
+      - alert: HighPredictionVolume
+        expr: rate(churn_predictions_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Volume alto de predicoes"
+          description: "Modelo {{ $labels.model }} processando {{ $value | humanize }} predicoes/segundo"
+
+      # Alerta: API respondendo mas modelo indisponivel
+      - alert: APIHealthyButModelDown
+        expr: up{job="churn-api"} == 1 and churn_model_loaded == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API saudavel mas modelo nao carregado"
+          description: "A API esta no ar mas o modelo de ML nao esta disponivel para predicoes"
+
+      # Alerta: Tempo de carregamento do modelo muito longo
+      - alert: SlowModelLoad
+        expr: churn_model_load_time_seconds > 30
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Carregamento do modelo muito lento"
+          description: "Modelo {{ $labels.model_name }} levou {{ $value | humanizeDuration }} para carregar"
+
+  - name: infrastructure-alerts
+    rules:
+      # Alerta: Prometheus reiniciou
+      - alert: PrometheusRestart
+        expr: process_start_time_seconds{job="prometheus"} < (time() - 3600)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus reiniciou recentemente"
+          description: "Prometheus foi reiniciado ha menos de 1 hora"
+
+      # Alerta: Alvos de scrape indisponiveis
+      - alert: ScrapeTargetsDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alvo de scrape {{ $labels.job }} indisponivel"
+          description: "O servico {{ $labels.job }} nao esta respondendo ao Prometheus"
+
+      # Alerta: Grafana indisponivel
+      - alert: GrafanaDown
+        expr: up{job="grafana"} == 0
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Grafana indisponivel"
+          description: "O Grafana nao esta respondendo ha mais de 2 minutos"
+
+      # Alerta: MLflow indisponivel
+      - alert: MLflowDown
+        expr: up{job="mlflow"} == 0
+        for: 3m
+        labels:
+          severity: high
+        annotations:
+          summary: "MLflow indisponivel"
+          description: "O MLflow nao esta respondendo ha mais de 3 minutos"
