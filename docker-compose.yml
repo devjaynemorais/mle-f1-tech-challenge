@@ -7,6 +7,8 @@ services:
       - "5000:5000"
     volumes:
       - mlflow_data:/mlflow
+    networks:
+      - mle-network
     healthcheck:
       test:
         - "CMD"
@@ -26,6 +28,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+    networks:
+      - mle-network
     depends_on:
       mlflow:
         condition: service_healthy
@@ -37,6 +41,14 @@ services:
       - "8000:8000"
     volumes:
       - ./models:/app/models
+    networks:
+      - mle-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   prometheus:
     image: prom/prometheus:v2.51.0
@@ -44,8 +56,20 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - mle-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
     depends_on:
       - api
+    restart: always
 
   grafana:
     image: grafana/grafana:10.4.2
@@ -54,13 +78,24 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:3000"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+    networks:
+      - mle-network
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+    restart: always
+
+networks:
+  mle-network:
+    driver: bridge
 
 volumes:
   mlflow_data:
+  prometheus_data:
   grafana_data:

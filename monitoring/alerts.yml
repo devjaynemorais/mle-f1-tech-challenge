@@ -1,0 +1,49 @@
+# Regras de Alertas do Prometheus
+
+groups:
+  - name: churn-api-alerts
+    rules:
+      # Alerta: API fora do ar
+      - alert: APIDown
+        expr: up{job="churn-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API Churn esta fora do ar"
+          description: "A API nao responde ha mais de 1 minuto"
+      
+      # Alerta: Taxa de erros alta
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(churn_api_request_errors_total[5m]))
+          / sum(rate(churn_api_requests_total[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: high
+        annotations:
+          summary: "Taxa de erros acima de 5%"
+          description: "{{ $value | humanizePercentage }} das requisicoes estao falhando"
+      
+      # Alerta: Latencia alta
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(churn_api_request_latency_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: medium
+        annotations:
+          summary: "Latencia p95 acima de 1 segundo"
+          description: "Latencia atual: {{ $value | humanizeDuration }}"
+      
+      # Alerta: Modelo nao carregado
+      - alert: ModelNotLoaded
+        expr: churn_model_loaded == 0
+        for: 1m
+        labels:
+          severity: high
+        annotations:
+          summary: "Modelo de ML nao esta carregado"
+          description: "A API esta funcionando mas sem o modelo de predicao"
