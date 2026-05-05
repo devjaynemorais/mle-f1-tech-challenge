@@ -36,13 +36,13 @@
     "producao": "Pipeline containerizado com Docker, modelo exposto via API REST para inferência."
   },
   "goal": {
-    "objetivo_ciencia_dados": "Desenvolver modelo de classificação que estime a probabilidade de churn com alto recall.",
-    "objetivo_tecnico": "Pipeline end-to-end com reprodutibilidade, versionamento e deploy em produção.",
+    "objetivo_ciencia_dados": "Desenvolver modelo de classificação de churn otimizado para atingir recall > 70%, precision > 60% e AUC > 80%.",
+    "objetivo_tecnico": "Implementar pipeline end-to-end reprodutível com versionamento, validação e monitoramento contínuo das métricas (recall, precision, AUC) em produção.",
     "objetivo_negocio": [
       "Reduzir churn em 10% no próximo semestre",
       "Gerar aumento incremental de receita (~US$ 14.000/mês)"
     ],
-    "objetivo_cd_avancado": "Incorporar cost-sensitive learning para balancear impacto de falsos positivos vs falsos negativos."
+    "objetivo_cd_avancado": "Aplicar cost-sensitive learning e ajuste de threshold para otimizar o trade-off entre recall e precision, garantindo AUC > 80%."
   },
   "model_type": {
     "principal": "Rede Neural Multicamadas (MLP) com PyTorch",

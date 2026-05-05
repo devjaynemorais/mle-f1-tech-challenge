@@ -6,7 +6,18 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.api.metrics import CHURN_PROBABILITY, PREDICTIONS_TOTAL
+from src.api.metrics import (
+    CHURN_PROBABILITY,
+    MODEL_LOADED,
+    MODEL_LOAD_TIME,
+    PREDICTION_CONFIDENCE,
+    PREDICTION_ERRORS_TOTAL,
+    PREDICTION_LATENCY,
+    PREDICTIONS_TOTAL,
+    REQUEST_ERRORS_TOTAL,
+    REQUEST_LATENCY,
+    REQUESTS_TOTAL,
+)
 from src.api.predictor import get_predictor
 from src.api.schemas import BatchPredictRequest, BatchPredictResponse, HealthResponse
 from src.utils.logging_config import get_logger
@@ -26,20 +37,39 @@ Instrumentator().instrument(app).expose(app)
 async def latency_middleware(request: Request, call_next):
     start = time.perf_counter()
     response = await call_next(request)
-    latency_ms = (time.perf_counter() - start) * 1000
+    latency_s = time.perf_counter() - start
+    
+    # Métrica de latência da requisição
+    REQUEST_LATENCY.labels(endpoint=request.url.path).observe(latency_s)
+    
+    # Métrica de total de requisições
+    REQUESTS_TOTAL.labels(
+        endpoint=request.url.path,
+        method=request.method,
+        status=response.status_code,
+    ).inc()
+    
     logger.info(
         "%s %s -> %d  latency=%.1fms",
         request.method,
         request.url.path,
         response.status_code,
-        latency_ms,
+        latency_s * 1000,
     )
-    response.headers["X-Latency-Ms"] = f"{latency_ms:.1f}"
+    response.headers["X-Latency-Ms"] = f"{latency_s * 1000:.1f}"
     return response
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    error_type = type(exc).__name__
+    
+    # Métrica de erros
+    REQUEST_ERRORS_TOTAL.labels(
+        endpoint=request.url.path,
+        error_type=error_type,
+    ).inc()
+    
     logger.error("Erro não tratado em %s: %s", request.url.path, exc, exc_info=True)
     return JSONResponse(
         status_code=500, content={"detail": "Erro interno do servidor."}
@@ -50,6 +80,10 @@ async def global_exception_handler(request: Request, exc: Exception):
 def health():
     """Verifica se a API e o modelo estão disponíveis."""
     predictor = get_predictor()
+    
+    # Métrica de status do modelo carregado
+    MODEL_LOADED.labels(model_name=predictor.model_name).set(1)
+    
     return HealthResponse(
         status="ok",
         model=predictor.model_name,
@@ -69,10 +103,37 @@ def predict_batch(body: BatchPredictRequest):
     """
     predictor = get_predictor()
     logger.info("Recebida requisição batch com %d registros.", len(body.records))
-    predictions = predictor.predict_batch(body.records)
-    PREDICTIONS_TOTAL.labels(model=predictor.model_name).inc(len(predictions))
-    for pred in predictions:
-        CHURN_PROBABILITY.observe(pred.churn_probability)
+    
+    start_time = time.perf_counter()
+    try:
+        predictions = predictor.predict_batch(body.records)
+        prediction_latency = time.perf_counter() - start_time
+        
+        # Métrica de latência da predição
+        PREDICTION_LATENCY.labels(model=predictor.model_name).observe(prediction_latency)
+        
+        # Métricas de predições
+        PREDICTIONS_TOTAL.labels(model=predictor.model_name).inc(len(predictions))
+        
+        # Coletar probabilidades para métricas
+        probabilities = []
+        for pred in predictions:
+            CHURN_PROBABILITY.observe(pred.churn_probability)
+            probabilities.append(pred.churn_probability)
+        
+        # Métrica de confiança média
+        if probabilities:
+            avg_confidence = sum(probabilities) / len(probabilities)
+            PREDICTION_CONFIDENCE.labels(model=predictor.model_name).set(avg_confidence)
+        
+    except Exception as e:
+        # Métrica de erros de predição
+        PREDICTION_ERRORS_TOTAL.labels(
+            model=predictor.model_name,
+            error_type=type(e).__name__,
+        ).inc()
+        raise
+    
     return BatchPredictResponse(
         model=predictor.model_name,
         threshold=predictor.threshold,

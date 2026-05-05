@@ -4,6 +4,8 @@ Pipeline de Machine Learning de ponta a ponta para prever evasão de clientes (*
 
 O projeto cobre EDA, modelagem com Scikit-Learn (MLP + Optuna), rastreamento de experimentos com MLflow, API de inferência batch com FastAPI e containerização com Docker.
 
+▶️ [Vídeo explicativo do projeto utilizando a metodologia STAR (Situação, Tarefa, Ação e Resultado)](https://youtu.be/KcjZENVYYs8)
+
 ---
 
 ## ⚠️ Para Rodar o Pipeline Completo
