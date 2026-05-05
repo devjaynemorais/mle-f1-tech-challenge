@@ -4,7 +4,6 @@ experiment:
   test_size: 0.3
 
 data:
-  target: Churn Value
 
   raw_path: data/raw/Telco_customer_churn.xlsx
   interim_path: data/interim/telecom_clean.csv
@@ -15,9 +14,11 @@ features:
   target_column: Churn Value
 
   drop_columns:
-    - CustomerID
-    - City
-    - Churn Score
+    - Zip Code
+    - Latitude
+    - Longitude
+    - Lat Long
+  
 
   categorical_columns:
     - Gender
@@ -160,8 +161,8 @@ production:
           - selector
           - model
         custom_transformers:
-          - src.features.feature_engineer_transformer.FeatureEngineerTransformer
-          - src.features.geo_transformer.GeoTransformer
+          - src.features.custom_transformers.FeatureEngineerTransformer
+          - src.features.custom_transformers.GeoTransformer
         required_columns:
           - Gender
           - Senior Citizen
