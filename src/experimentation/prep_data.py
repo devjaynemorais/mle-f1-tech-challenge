@@ -1,15 +1,19 @@
+import numpy as np
+from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
-import numpy as np
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
 def load_data(config) -> pd.DataFrame:
-
     raw_path = config["data"]["raw_path"]
+    file_suffix = Path(raw_path).suffix.lower()
+
+    if file_suffix in {".xlsx", ".xls", ".xlsm"}:
+        return pd.read_excel(raw_path)
 
     return pd.read_csv(raw_path)
 
@@ -40,10 +44,9 @@ def sanity_check(config) -> pd.DataFrame:
     # convert Total Charges to numeric
     if "Total Charges" in df.columns:
         logger.info("Convertendo Total Charges para numérico.")
-        df["Total Charges"] = pd.to_numeric(
-            df["Total Charges"].replace(" ", np.nan),
-            errors="coerce",
-        )
+        total_charges = df["Total Charges"].astype("string").str.strip()
+        total_charges = total_charges.mask(total_charges.eq(""), pd.NA)
+        df["Total Charges"] = pd.to_numeric(total_charges, errors="coerce")
         df["Total Charges"] = df["Total Charges"].fillna(0)
 
 

@@ -45,8 +45,7 @@ except (
 ):  # pragma: no cover - exercised when dependency is absent locally
     XGBClassifier = None
 
-from src.features.feature_engineer_transformer import FeatureEngineerTransformer
-from src.features.geo_transformer import GeoTransformer
+from src.features.custom_transformers import FeatureEngineerTransformer, GeoTransformer
 from src.models.mlp import DEFAULT_DEVICE, MLP, CityEmbeddingMLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")

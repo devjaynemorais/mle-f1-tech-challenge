@@ -6,16 +6,12 @@ from collections.abc import Callable
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
+import mlflow
 import numpy as np
 import pandas as pd
-from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.model_selection import cross_validate
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
-from src.features.feature_engineer_transformer import FeatureEngineerTransformer
-from src.features.geo_transformer import GeoTransformer
-from src.utils.exp import MLPClassifierWrapper, require_xgboost
+from src.experimentation.build_pipeline import build_pipeline
 
 if TYPE_CHECKING:
     import optuna
@@ -74,142 +70,143 @@ def suggest_params_from_space(
     return suggested
 
 
-def build_mlp_optuna_pipeline(
-    preprocessor: Any, fe_params: dict[str, Any], params: dict[str, Any]
-) -> Pipeline:
-    """Reconstrói o pipeline da MLP para a etapa de Optuna."""
-    return Pipeline(
-        [
-            ("fe", FeatureEngineerTransformer(**fe_params)),
-            ("geo", GeoTransformer(strategy="drop")),
-            ("prep", preprocessor),
-            (
-                "selector",
-                SelectKBest(
-                    score_func=f_classif,
-                    k=int(params["selector__k"]),
-                ),
-            ),
-            ("scaler", StandardScaler(with_mean=False)),
-            (
-                "model",
-                MLPClassifierWrapper(
-                    output_dim=1,
-                    activation=params["model__activation"],
-                    hidden_dim=int(params["model__hidden_dim"]),
-                    dropout=float(params["model__dropout"]),
-                    lr=float(params["model__lr"]),
-                    weight_decay=float(params["model__weight_decay"]),
-                    batch_size=int(params["model__batch_size"]),
-                    max_epochs=80,
-                    patience=16,
-                    min_delta=1e-3,
-                    threshold=0.5,
-                    val_size=0.15,
-                    random_state=42,
-                    verbose=False,
-                ),
-            ),
-        ]
-    )
+def suggest_params(trial: Any, model_name: str, config: dict[str, Any]) -> dict[str, Any]:
+    """Despacha a sugestao de hiperparametros pelo nome do modelo."""
+    search_space = _get_search_space(config, model_name)
+    return suggest_params_from_space(trial, search_space)
 
 
-def build_xgb_optuna_pipeline(
-    preprocessor: Any,
-    fe_params: dict[str, Any],
+def prepare_model_params(
+    model_name: str,
     params: dict[str, Any],
+    config: dict[str, Any],
     y_reference: Any,
-) -> Pipeline:
-    """Reconstrói o pipeline do XGBoost para a etapa de Optuna."""
-    xgb_classifier = require_xgboost()
-    y_arr = np.asarray(y_reference)
-    scale_pos_weight = float((y_arr == 0).sum()) / max(float((y_arr == 1).sum()), 1.0)
+) -> dict[str, Any]:
+    """Aplica defaults e parametros especiais por modelo sem poluir a objective."""
+    base_params = dict(config.get("model", {}).get("params", {}))
+    prepared = {**base_params, **params}
 
-    return Pipeline(
-        [
-            ("fe", FeatureEngineerTransformer(**fe_params)),
-            ("geo", GeoTransformer(strategy="drop")),
-            ("prep", preprocessor),
-            (
-                "model",
-                xgb_classifier(
-                    objective="binary:logistic",
-                    eval_metric="logloss",
-                    random_state=42,
-                    n_jobs=-1,
-                    scale_pos_weight=scale_pos_weight,
-                    n_estimators=int(params["model__n_estimators"]),
-                    max_depth=int(params["model__max_depth"]),
-                    learning_rate=float(params["model__learning_rate"]),
-                    min_child_weight=int(params["model__min_child_weight"]),
-                    subsample=float(params["model__subsample"]),
-                    colsample_bytree=float(params["model__colsample_bytree"]),
-                    gamma=float(params["model__gamma"]),
-                    reg_alpha=float(params["model__reg_alpha"]),
-                    reg_lambda=float(params["model__reg_lambda"]),
-                ),
-            ),
-        ]
+    if model_name == "mlp":
+        prepared.setdefault("output_dim", 1)
+        prepared.setdefault("max_epochs", 80)
+        prepared.setdefault("patience", 16)
+        prepared.setdefault("min_delta", 1e-3)
+        prepared.setdefault("threshold", 0.5)
+        prepared.setdefault("val_size", 0.15)
+        prepared.setdefault("random_state", config["cv"].get("random_state", 42))
+        prepared.setdefault("verbose", False)
+
+    if model_name == "xgboost":
+        y_arr = np.asarray(y_reference)
+        positive_count = float((y_arr == 1).sum())
+        negative_count = float((y_arr == 0).sum())
+        prepared.setdefault("objective", "binary:logistic")
+        prepared.setdefault("eval_metric", "logloss")
+        prepared.setdefault("random_state", config["cv"].get("random_state", 42))
+        prepared.setdefault("n_jobs", 1)
+        prepared.setdefault(
+            "scale_pos_weight",
+            negative_count / max(positive_count, 1.0),
+        )
+
+    return prepared
+
+
+def summarize_cv_results(
+    cv_res: dict[str, Any],
+    scoring: dict[str, Any],
+) -> dict[str, float]:
+    """Resume as metricas medias e desvios a partir do cross_validate."""
+    metrics: dict[str, float] = {}
+
+    for metric_name in scoring:
+        scores = cv_res[f"test_{metric_name}"]
+        metrics[f"{metric_name}_mean"] = float(np.mean(scores))
+        metrics[f"{metric_name}_std"] = float(np.std(scores))
+
+    metrics["fit_time_mean"] = float(np.mean(cv_res["fit_time"]))
+    metrics["score_time_mean"] = float(np.mean(cv_res["score_time"]))
+    return metrics
+
+
+def objective(
+    trial: Any,
+    model_name: str,
+    config: dict[str, Any],
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: dict[str, Any],
+    trial_records: list[dict[str, Any]],
+) -> float:
+    """Objective generica do Optuna, com logging de cada trial em nested run."""
+    params = suggest_params(trial, model_name, config)
+    prepared_params = prepare_model_params(model_name, params, config, y)
+
+    estimator = build_pipeline(
+        model_name=model_name,
+        model_params=prepared_params,
+        config=config,
+        y_reference=y,
     )
 
-
-def evaluate_candidate_cv(
-    estimator: Any, X: Any, y: Any, cv: Any, scoring: Any
-) -> dict[str, float]:
-    """Executa CV e devolve o pacote padronizado de métricas."""
     cv_res = cross_validate(
-        estimator=estimator,
-        X=X,
-        y=y,
+        estimator,
+        X,
+        y,
         cv=cv,
         scoring=scoring,
         n_jobs=1,
         return_train_score=False,
     )
+    metrics = summarize_cv_results(cv_res, scoring)
+    metric_name = config["tuning"]["primary_metric"]
+    score = metrics[f"{metric_name}_mean"]
 
-    return {
-        "pr_auc_mean": float(cv_res["test_pr_auc"].mean()),
-        "pr_auc_std": float(cv_res["test_pr_auc"].std()),
-        "roc_auc_mean": float(cv_res["test_roc_auc"].mean()),
-        "recall_mean": float(cv_res["test_recall"].mean()),
-        "precision_mean": float(cv_res["test_precision"].mean()),
-        "f1_mean": float(cv_res["test_f1"].mean()),
-        "fit_time_mean_s": float(cv_res["fit_time"].mean()),
-        "score_time_mean_s": float(cv_res["score_time"].mean()),
-    }
+    with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
+        mlflow.log_params(params)
+        for metric_key, metric_value in metrics.items():
+            mlflow.log_metric(metric_key, metric_value)
 
-
-def make_optuna_objective(
-    model_name: str,
-    pipeline_factory: Callable[[dict[str, Any]], Any],
-    X: Any,
-    y: Any,
-    cv: Any,
-    scoring: Any,
-    search_space: dict[str, Any],
-    trial_records: list[dict[str, Any]],
-) -> Callable[[optuna.trial.Trial], float]:
-    """Cria a função objetivo do Optuna a partir de um builder de pipeline."""
-
-    def objective(trial: Any) -> float:
-        params = suggest_params_from_space(trial, search_space)
-        estimator = pipeline_factory(params)
-        metrics = evaluate_candidate_cv(estimator, X, y, cv, scoring)
-
-        trial_record = {
+    trial_records.append(
+        {
             "trial_number": trial.number,
             "model_name": model_name,
             **params,
             **metrics,
         }
-        trial_records.append(trial_record)
-        return metrics["pr_auc_mean"]
+    )
+    return score
 
-    return objective
+
+def make_optuna_objective(
+    model_name: str,
+    config: dict[str, Any],
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: dict[str, Any],
+    trial_records: list[dict[str, Any]],
+) -> Callable[[optuna.trial.Trial], float]:
+    """Cria a funcao objetivo do Optuna a partir do contrato generico."""
+
+    def _objective(trial: Any) -> float:
+        return objective(
+            trial=trial,
+            model_name=model_name,
+            config=config,
+            X=X,
+            y=y,
+            cv=cv,
+            scoring=scoring,
+            trial_records=trial_records,
+        )
+
+    return _objective
 
 
 def build_trials_df(trial_records: list[dict[str, Any]]) -> pd.DataFrame:
-    """Consolida os trials em um DataFrame ordenado pelo número do trial."""
+    """Consolida os trials em um DataFrame ordenado pelo numero do trial."""
     if not trial_records:
         return pd.DataFrame()
 
@@ -223,7 +220,7 @@ def build_convergence_history(
     trials_df: pd.DataFrame,
     objective_col: str = "pr_auc_mean",
 ) -> pd.DataFrame:
-    """Gera histórico de convergência com melhor valor acumulado."""
+    """Gera historico de convergencia com melhor valor acumulado."""
     if trials_df.empty:
         return pd.DataFrame(
             columns=[
@@ -250,7 +247,7 @@ def should_stop_for_convergence(
     min_improvement: float,
     objective_col: str = "pr_auc_mean",
 ) -> bool:
-    """Decide se a busca deve parar pela ausência de melhora mínima relevante."""
+    """Decide se a busca deve parar pela ausencia de melhora minima relevante."""
     if trials_df.empty or len(trials_df) < patience_trials:
         return False
 
@@ -274,33 +271,35 @@ def should_stop_for_convergence(
 def run_optuna_study(
     *,
     model_name: str,
-    search_space: dict[str, Any],
-    pipeline_factory: Callable[[dict[str, Any]], Any],
+    config: dict[str, Any],
     X: Any,
     y: Any,
     cv: Any,
-    scoring: Any,
+    scoring: dict[str, Any],
+    n_trials: int | None = None,
     timeout_seconds: int = 3600,
     convergence_patience_trials: int = 50,
     convergence_min_improvement: float = 5e-3,
     random_state: int = 42,
 ) -> tuple[Any, pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any]]:
-    """Executa um estudo do Optuna com parada por convergência."""
+    """Executa um estudo do Optuna com objective generica e nested runs por trial."""
     optuna = _require_optuna()
     sampler = optuna.samplers.TPESampler(seed=random_state)
-    study = optuna.create_study(direction="maximize", sampler=sampler)
+    direction = config.get("tuning", {}).get("direction", "maximize")
+    study = optuna.create_study(direction=direction, sampler=sampler)
     trial_records: list[dict[str, Any]] = []
 
-    objective = make_optuna_objective(
+    optuna_objective = make_optuna_objective(
         model_name=model_name,
-        pipeline_factory=pipeline_factory,
+        config=config,
         X=X,
         y=y,
         cv=cv,
         scoring=scoring,
-        search_space=search_space,
         trial_records=trial_records,
     )
+
+    primary_metric = config["tuning"]["primary_metric"]
 
     def _convergence_callback(study_: Any, trial: Any) -> None:
         del study_, trial
@@ -309,33 +308,42 @@ def run_optuna_study(
             current_df,
             patience_trials=convergence_patience_trials,
             min_improvement=convergence_min_improvement,
+            objective_col=f"{primary_metric}_mean",
         ):
             study.stop()
 
     study.optimize(
-        objective,
+        optuna_objective,
+        n_trials=n_trials,
         timeout=timeout_seconds,
         callbacks=[_convergence_callback],
     )
 
     trials_df = build_trials_df(trial_records)
-    convergence_df = build_convergence_history(trials_df)
+    convergence_df = build_convergence_history(
+        trials_df,
+        objective_col=f"{primary_metric}_mean",
+    )
 
     if trials_df.empty:
         raise RuntimeError(f"O estudo do Optuna nao gerou trials para {model_name}.")
 
+    best_trial_number = study.best_trial.number
     best_row = (
-        trials_df.sort_values(
-            ["pr_auc_mean", "roc_auc_mean", "recall_mean"],
-            ascending=[False, False, False],
-        )
+        trials_df.loc[trials_df["trial_number"] == best_trial_number]
         .iloc[0]
         .to_dict()
     )
-
-    best_params = {key: value for key, value in best_row.items() if key in search_space}
-
+    best_params = dict(study.best_trial.params)
     return study, trials_df, convergence_df, best_params, best_row
+
+
+def _get_search_space(config: dict[str, Any], model_name: str) -> dict[str, Any]:
+    tuning_cfg = config.get("tuning", {})
+    search_space = tuning_cfg.get("search_space", {})
+    if model_name in search_space and isinstance(search_space[model_name], dict):
+        return search_space[model_name]
+    return search_space
 
 
 def _require_optuna():

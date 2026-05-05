@@ -1,14 +1,13 @@
-
-
-from features.custom_transformers import FeatureEngineerTransformer, GeoTransformer
-from sklearn.compose import ColumnTransformer, make_column_selector, make_column_selector
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.dummy import DummyClassifier
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
-from utils.exp import MLPClassifierWrapper
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, RobustScaler, StandardScaler
 from xgboost import XGBClassifier
+
+from src.features.custom_transformers import FeatureEngineerTransformer, GeoTransformer
+from src.utils.exp import MLPClassifierWrapper
 
 
 def build_preprocessor():
@@ -41,31 +40,50 @@ def get_scaler(config):
     if scaler_type in [None, "none"]:
         return "passthrough"
 
-    raise ValueError(f"Scaler não suportado: {scaler_type}")
+    raise ValueError(f"Scaler nao suportado: {scaler_type}")
 
 
-def get_model(config):
+def get_model(config, model_name=None, model_params=None):
     model_cfg = config["model"]
-    model_name = model_cfg["name"]
-    model_params = model_cfg.get("params", {})
+    model_name = model_name or model_cfg["name"]
+    merged_model_params = {
+        **model_cfg.get("params", {}),
+        **(model_params or {}),
+    }
+    merged_model_params.pop("selector_k", None)
 
     if model_name == "dummy":
-        return DummyClassifier(**model_params)
+        return DummyClassifier(**merged_model_params)
 
     if model_name == "logistic_regression":
-        return LogisticRegression(**model_params)
+        return LogisticRegression(**merged_model_params)
 
     if model_name == "xgboost":
-        return XGBClassifier(**model_params)
+        return XGBClassifier(**merged_model_params)
 
     if model_name == "mlp":
-        return MLPClassifierWrapper(**model_params)
+        return MLPClassifierWrapper(**merged_model_params)
 
-    raise ValueError(f"Modelo não suportado: {model_name}")
+    raise ValueError(f"Modelo nao suportado: {model_name}")
 
 
-def build_pipeline(config):
-    
+def get_selector(config, model_name=None, model_params=None):
+    model_cfg = config["model"]
+    resolved_model_name = model_name or model_cfg["name"]
+    merged_model_params = {
+        **model_cfg.get("params", {}),
+        **(model_params or {}),
+    }
+    selector_k = merged_model_params.get("selector_k")
+
+    if resolved_model_name == "mlp" and selector_k is not None:
+        return SelectKBest(score_func=f_classif, k=int(selector_k))
+
+    return "passthrough"
+
+
+def build_pipeline(config, model_name=None, model_params=None, y_reference=None):
+    del y_reference
     feat_params = config["features"].get("engineering", {})
     geo_strategy = config["features"].get("geo", {}).get("strategy", "none")
 
@@ -73,9 +91,10 @@ def build_pipeline(config):
         steps=[
             ("feature_engineering", FeatureEngineerTransformer(**feat_params)),
             ("geo", GeoTransformer(strategy=geo_strategy)),
-            ("preprocessor", build_preprocessor(config)),
+            ("preprocessor", build_preprocessor()),
+            ("selector", get_selector(config, model_name=model_name, model_params=model_params)),
             ("scaler", get_scaler(config)),
-            ("model", get_model(config)),
+            ("model", get_model(config, model_name=model_name, model_params=model_params)),
         ]
     )
 
