@@ -2,6 +2,9 @@
 set -e
 
 case "$1" in
+  experiment)
+    exec python run_experiment.py
+    ;;
   train)
     exec python run_train.py
     ;;
@@ -17,7 +20,7 @@ case "$1" in
       --port 5000 \
       --backend-store-uri sqlite:////mlflow/mlflow.db \
       --default-artifact-root /mlflow/mlartifacts \
-      --allowed-hosts "mlflow,mlflow:5000,localhost,localhost:5000,127.0.0.1,127.0.0.1:5000"
+      --allowed-hosts "mlflow,mlflow:5000,localhost,localhost:5000"
     ;;
   *)
     echo "Uso: docker run churn-api [train|inference|api|mlflow]"

@@ -155,10 +155,6 @@ No cenario sem ponderacao, a `MLP Optuna` apresentou:
 - `IEL = 329343.52`
 - `ROI = 2.52`
 
-No cenario com `sample_weight = CLTV`, a `MLP Optuna` apresentou:
-- `IEL = 316294.62`
-- `ROI = 2.39`
-
 Conclusao metodologica:
 
 > A ponderacao do treino por `CLTV` foi testada como aproximacao entre objetivo estatistico e objetivo economico, mas nao trouxe ganho para a `MLP Optuna`, elevando o custo de omissao (`VP`) e reduzindo o retorno final da estrategia.

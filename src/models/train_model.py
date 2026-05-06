@@ -50,7 +50,7 @@ def _check_mlflow_server(tracking_uri: str) -> None:
     except OSError:
         logger.error(
             "MLflow nao esta rodando em %s. Suba o servidor antes de treinar:\n"
-            "  mlflow server --host 127.0.0.1 --port %d",
+            "  mlflow server --host localhost --port %d",
             tracking_uri,
             port,
         )
