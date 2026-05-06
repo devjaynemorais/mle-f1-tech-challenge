@@ -18,16 +18,10 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 1. Coloque os dados brutos em `data/raw/Telco_customer_churn.xlsx`
 2. `make env` — cria o ambiente virtual
-3. Escolha como treinar:
+3. Rode:
 
    ```bash
-   make experiment  # baselines → FE → Optuna → grava config/best_params.yaml
-   make train       # lê best_params.yaml, treina MLP, registra no MLflow e materializa
-   ```
-
-   Ou, para apenas materializar um modelo já registrado no MLflow:
-   ```bash
-   make setup  # baixa artefatos do run_id em config.yaml para models/production/
+   make setup  # executa os experimentos
    ```
 
 4. A partir daqui, escolha como servir a API:
@@ -56,9 +50,9 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 ```bash
 make env               # cria o ambiente virtual
-make experiment        # pipeline de experimentação → grava config/best_params.yaml
-make train             # treina MLP a partir de best_params.yaml, registra e materializa
-make setup             # só materializa (baixa artefatos do run_id em config.yaml)
+make experiment        # executa pipeline de experimentação
+make train             # treina MLP a partir de best_params.
+make setup             # executa todos os experimentos
 make lint              # linting com ruff
 make test              # testes com pytest
 make inference         # avalia o modelo no conjunto de teste
