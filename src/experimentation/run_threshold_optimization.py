@@ -14,20 +14,13 @@ import yaml
 from src.experimentation.build_pipeline import build_pipeline
 from src.experimentation.prep_data import prep_data
 from src.experimentation.run_experiment import DEFAULT_CONFIG_PATH, build_cv, load_config
+from src.experimentation.tracking import apply_tracking_config, get_tracking_config
 from src.utils.exp import generate_oof_predictions, optimize_threshold_for_roi
 from src.utils.mlflow_tracking import log_dataframe_artifact
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config"
-
-
-def _get_tracking_config(config: dict[str, Any]) -> dict[str, Any]:
-    tracking_cfg = config.get("tracking") or config.get("mlflow") or {}
-    return {
-        "tracking_uri": tracking_cfg.get("tracking_uri"),
-        "experiment_name": tracking_cfg.get("experiment_name"),
-    }
 
 
 def _get_evaluation_config(config: dict[str, Any]) -> dict[str, float]:
@@ -130,17 +123,10 @@ def run_threshold_optimization(
     config_path: str | Path | None = None,
     set_experiment: bool = True,
 ) -> dict[str, Any]:
-    tracking_cfg = _get_tracking_config(config)
+    tracking_cfg = get_tracking_config(config)
     evaluation_cfg = _get_evaluation_config(config)
-    tracking_uri = tracking_cfg["tracking_uri"]
-    experiment_name = tracking_cfg["experiment_name"]
     model_name = config["model"]["name"]
-
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    if set_experiment and experiment_name:
-        mlflow.set_experiment(experiment_name)
+    apply_tracking_config(tracking_cfg, set_experiment=set_experiment)
 
     split_bundle = prep_data(config)
     X_train = split_bundle["X_train"]

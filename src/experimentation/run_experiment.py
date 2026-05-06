@@ -10,6 +10,7 @@ from sklearn.model_selection import KFold, StratifiedKFold, cross_validate
 
 from src.experimentation.build_pipeline import build_pipeline
 from src.experimentation.prep_data import prep_data
+from src.experimentation.tracking import apply_tracking_config, get_tracking_config
 
 
 DEFAULT_CONFIG_PATH = (
@@ -48,14 +49,6 @@ def build_cv(config):
     raise ValueError(f"CV nao suportado: {cv_type}")
 
 
-def _get_tracking_config(config):
-    tracking_cfg = config.get("tracking") or config.get("mlflow") or {}
-    return {
-        "tracking_uri": tracking_cfg.get("tracking_uri"),
-        "experiment_name": tracking_cfg.get("experiment_name"),
-    }
-
-
 def _summarize_cv_results(model_name, cv_res, metrics):
     summary = {"model": model_name}
 
@@ -84,15 +77,8 @@ def _build_mlflow_metrics(summary):
 
 
 def run_experiment(config, set_experiment=True):
-    tracking_cfg = _get_tracking_config(config)
-    tracking_uri = tracking_cfg["tracking_uri"]
-    experiment_name = tracking_cfg["experiment_name"]
-
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    if set_experiment and experiment_name:
-        mlflow.set_experiment(experiment_name)
+    tracking_cfg = get_tracking_config(config)
+    apply_tracking_config(tracking_cfg, set_experiment=set_experiment)
 
     data = prep_data(config)
     X_train = data["X_train"]

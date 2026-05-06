@@ -171,6 +171,70 @@ def test_run_experiment_skips_set_experiment_when_disabled(monkeypatch):
     assert called["set_experiment"] == 0
 
 
+def test_run_experiment_prefers_env_tracking_uri_over_yaml(monkeypatch):
+    from src.experimentation import run_experiment as run_experiment_module
+
+    logged = {"tracking_uri": None}
+
+    @contextmanager
+    def fake_start_run(run_name):
+        yield object()
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    monkeypatch.setattr(
+        run_experiment_module,
+        "prep_data",
+        lambda config: {
+            "X_train": pd.DataFrame({"feature": [1, 2]}),
+            "y_train": pd.Series([0, 1]),
+        },
+    )
+    monkeypatch.setattr(run_experiment_module, "build_pipeline", lambda config: "pipeline")
+    monkeypatch.setattr(run_experiment_module, "build_cv", lambda config: "cv")
+    monkeypatch.setattr(
+        run_experiment_module,
+        "cross_validate",
+        lambda **kwargs: {
+            "test_pr_auc": np.array([0.4, 0.6]),
+            "test_roc_auc": np.array([0.7, 0.9]),
+            "test_recall": np.array([0.8, 0.6]),
+            "test_precision": np.array([0.5, 0.7]),
+            "test_f1_score": np.array([0.55, 0.75]),
+            "fit_time": np.array([1.0, 3.0]),
+            "score_time": np.array([0.1, 0.3]),
+        },
+    )
+    monkeypatch.setattr(
+        run_experiment_module.mlflow,
+        "set_tracking_uri",
+        lambda uri: logged.__setitem__("tracking_uri", uri),
+    )
+    monkeypatch.setattr(run_experiment_module.mlflow, "set_experiment", lambda name: None)
+    monkeypatch.setattr(run_experiment_module.mlflow, "start_run", fake_start_run)
+    monkeypatch.setattr(run_experiment_module.mlflow, "log_metrics", lambda metrics: None)
+
+    run_experiment_module.run_experiment(
+        {
+            "model": {"name": "logistic_regression"},
+            "cv": {
+                "scoring": {
+                    "pr_auc": "average_precision",
+                    "roc_auc": "roc_auc",
+                    "recall": "recall",
+                    "precision": "precision",
+                    "f1_score": "f1",
+                }
+            },
+            "tracking": {
+                "tracking_uri": "sqlite:///mlflow.db",
+                "experiment_name": "exp-churn",
+            },
+        }
+    )
+
+    assert logged["tracking_uri"] == "http://mlflow:5000"
+
+
 def test_load_config_reads_full_yaml_without_overrides(tmp_path):
     from src.experimentation import run_experiment as run_experiment_module
 

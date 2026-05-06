@@ -14,20 +14,13 @@ import yaml
 from src.experimentation.build_pipeline import build_pipeline
 from src.experimentation.prep_data import prep_data
 from src.experimentation.run_experiment import DEFAULT_CONFIG_PATH, build_cv, load_config
+from src.experimentation.tracking import apply_tracking_config, get_tracking_config
 from src.utils.mlflow_tracking import log_dataframe_artifact
 from src.utils.optuna_search import prepare_model_params, run_optuna_study
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config"
-
-
-def _get_tracking_config(config: dict[str, Any]) -> dict[str, Any]:
-    tracking_cfg = config.get("tracking") or config.get("mlflow") or {}
-    return {
-        "tracking_uri": tracking_cfg.get("tracking_uri"),
-        "experiment_name": tracking_cfg.get("experiment_name"),
-    }
 
 
 def _sanitize_model_name(model_name: str) -> str:
@@ -112,15 +105,8 @@ def run_optuna(
     config_path: str | Path | None = None,
     set_experiment: bool = True,
 ) -> dict[str, Any]:
-    tracking_cfg = _get_tracking_config(config)
-    tracking_uri = tracking_cfg["tracking_uri"]
-    experiment_name = tracking_cfg["experiment_name"]
-
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    if set_experiment and experiment_name:
-        mlflow.set_experiment(experiment_name)
+    tracking_cfg = get_tracking_config(config)
+    apply_tracking_config(tracking_cfg, set_experiment=set_experiment)
 
     data = prep_data(config)
     X_train = data["X_train"]

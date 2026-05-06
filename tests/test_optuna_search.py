@@ -248,3 +248,63 @@ def test_generic_objective_logs_nested_trial_runs(monkeypatch):
     assert len(trial_records) == 1
     assert trial_records[0]["trial_number"] == 7
     assert trial_records[0]["pr_auc_mean"] == pytest.approx(0.85)
+
+
+def test_run_optuna_study_dispatches_to_legacy_contract(monkeypatch):
+    from src.utils import optuna_search
+
+    captured = {}
+
+    monkeypatch.setattr(
+        optuna_search,
+        "_run_legacy_optuna_study",
+        lambda **kwargs: captured.update(kwargs) or ("study", "trials", "history", {}, {}),
+    )
+
+    result = optuna_search.run_optuna_study(
+        model_name="MLP",
+        search_space={"selector__k": {"low": 10, "high": 20}},
+        pipeline_factory=lambda params: params,
+        X="X_train",
+        y="y_train",
+        cv="cv",
+        scoring={"pr_auc": "average_precision"},
+    )
+
+    assert result[0] == "study"
+    assert captured["model_name"] == "MLP"
+    assert captured["search_space"] == {"selector__k": {"low": 10, "high": 20}}
+    assert callable(captured["pipeline_factory"])
+
+
+def test_legacy_notebook_pipeline_builders_remain_available():
+    from sklearn.preprocessing import StandardScaler
+
+    from src.utils.exp import DEFAULT_ROUND4_FE_PARAMS
+    from src.utils.optuna_search import build_mlp_optuna_pipeline
+
+    preprocessor = StandardScaler(with_mean=False)
+    pipeline = build_mlp_optuna_pipeline(
+        preprocessor=preprocessor,
+        fe_params=DEFAULT_ROUND4_FE_PARAMS,
+        params={
+            "selector__k": 12,
+            "model__activation": "relu",
+            "model__hidden_dim": 64,
+            "model__dropout": 0.1,
+            "model__lr": 1e-3,
+            "model__weight_decay": 1e-5,
+            "model__batch_size": 32,
+        },
+    )
+
+    assert [name for name, _ in pipeline.steps] == [
+        "fe",
+        "geo",
+        "prep",
+        "selector",
+        "scaler",
+        "model",
+    ]
+    assert pipeline.named_steps["selector"].k == 12
+    assert pipeline.named_steps["prep"] is not preprocessor

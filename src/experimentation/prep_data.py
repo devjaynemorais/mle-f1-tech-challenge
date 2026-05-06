@@ -60,7 +60,7 @@ def sanity_check(config) -> pd.DataFrame:
     return df
 
 
-def split_data(df, config):
+def build_feature_matrices(df, config):
     target = config["data"]["target"]
     meta_cols = config["data"].get("meta_cols", [])
 
@@ -71,7 +71,17 @@ def split_data(df, config):
 
     X = df[feature_cols]
     y = df[target]
-    metadata = df[meta_cols]  
+    metadata = df[meta_cols]
+
+    return X, y, metadata
+
+
+def load_clean_dataset(config) -> pd.DataFrame:
+    return sanity_check(config)
+
+
+def split_data(df, config):
+    X, y, metadata = build_feature_matrices(df, config)
 
     X_train, X_test, y_train, y_test, meta_train, meta_test = train_test_split(
         X,
@@ -86,8 +96,7 @@ def split_data(df, config):
 
 
 def prep_data(config):
-    
-    df = sanity_check(config)
+    df = load_clean_dataset(config)
 
     X_train, X_test, y_train, y_test, meta_train, meta_test = split_data(df, config)
 

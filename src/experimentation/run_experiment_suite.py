@@ -4,10 +4,10 @@ import argparse
 from collections import defaultdict
 from pathlib import Path
 
-import mlflow
 import pandas as pd
 
 from src.experimentation.run_experiment import load_config, run_experiment
+from src.experimentation.tracking import apply_tracking_config, get_tracking_config
 
 
 def resolve_config_paths(
@@ -50,7 +50,7 @@ def run_experiment_suite(
 
     for config_path in resolved_paths:
         config = load_config(config_path)
-        tracking_cfg = config["tracking"]
+        tracking_cfg = get_tracking_config(config)
         experiment_name = tracking_cfg["experiment_name"]
         tracking_uri = tracking_cfg.get("tracking_uri")
 
@@ -65,10 +65,12 @@ def run_experiment_suite(
     suite_rows = []
 
     for experiment_name in sorted(grouped_configs):
-        tracking_uri = tracking_uris[experiment_name]
-        if tracking_uri:
-            mlflow.set_tracking_uri(tracking_uri)
-        mlflow.set_experiment(experiment_name)
+        apply_tracking_config(
+            {
+                "tracking_uri": tracking_uris[experiment_name],
+                "experiment_name": experiment_name,
+            }
+        )
 
         for config_path, config in grouped_configs[experiment_name]:
             summary_df = run_experiment(config, set_experiment=False).copy()

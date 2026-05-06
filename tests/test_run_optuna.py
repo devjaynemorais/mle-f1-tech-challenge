@@ -169,3 +169,81 @@ def test_run_optuna_logs_parent_run_and_writes_best_yaml(monkeypatch, tmp_path):
     assert logged_model["artifact_path"] == "best_model"
     assert best_pipeline.fit_calls == [("X_train", "y_train")]
     assert ("artifact", "best_mlp_params.yaml") in logged_artifacts
+
+
+def test_run_optuna_prefers_env_tracking_uri(monkeypatch, tmp_path):
+    from src.experimentation import run_optuna as run_optuna_module
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    monkeypatch.setattr(run_optuna_module, "CONFIG_DIR", tmp_path)
+
+    events = []
+
+    @contextmanager
+    def fake_start_run(run_name, nested=False):
+        yield object()
+
+    monkeypatch.setattr(
+        run_optuna_module,
+        "prep_data",
+        lambda config: {"X_train": "X_train", "y_train": "y_train"},
+    )
+    monkeypatch.setattr(run_optuna_module, "build_cv", lambda config: "cv")
+    monkeypatch.setattr(
+        run_optuna_module,
+        "run_optuna_study",
+        lambda **kwargs: (
+            object(),
+            pd.DataFrame([{"trial_number": 0, "pr_auc_mean": 0.80}]),
+            pd.DataFrame([{"trial_number": 0, "best_pr_auc_so_far": 0.80}]),
+            {"hidden_dim": 64},
+            {"trial_number": 0, "pr_auc_mean": 0.80, "pr_auc_std": 0.02},
+        ),
+    )
+    monkeypatch.setattr(
+        run_optuna_module,
+        "build_pipeline",
+        lambda *, model_name, model_params, config, y_reference=None: type(
+            "FakePipeline",
+            (),
+            {"fit": lambda self, X, y: self},
+        )(),
+    )
+    monkeypatch.setattr(
+        run_optuna_module,
+        "prepare_model_params",
+        lambda **kwargs: {"hidden_dim": 64, "random_state": 42},
+    )
+    monkeypatch.setattr(run_optuna_module, "log_dataframe_artifact", lambda df, artifact_name: None)
+    monkeypatch.setattr(
+        run_optuna_module.mlflow,
+        "set_tracking_uri",
+        lambda uri: events.append(("tracking_uri", uri)),
+    )
+    monkeypatch.setattr(run_optuna_module.mlflow, "set_experiment", lambda name: None)
+    monkeypatch.setattr(run_optuna_module.mlflow, "start_run", fake_start_run)
+    monkeypatch.setattr(run_optuna_module.mlflow, "log_params", lambda params: None)
+    monkeypatch.setattr(run_optuna_module.mlflow, "log_metrics", lambda metrics: None)
+    monkeypatch.setattr(run_optuna_module.mlflow, "log_artifact", lambda path: None)
+    monkeypatch.setattr(run_optuna_module.mlflow_sklearn, "log_model", lambda model, artifact_path: None)
+
+    run_optuna_module.run_optuna(
+        {
+            "model": {"name": "mlp"},
+            "tracking": {
+                "experiment_name": "exp-optuna",
+                "tracking_uri": "sqlite:///mlflow.db",
+            },
+            "cv": {
+                "scoring": {
+                    "pr_auc": "average_precision",
+                }
+            },
+            "tuning": {
+                "primary_metric": "pr_auc",
+            },
+        },
+        config_path=tmp_path / "experiments" / "mlp.yaml",
+    )
+
+    assert ("tracking_uri", "http://mlflow:5000") in events

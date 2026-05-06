@@ -10,6 +10,7 @@ import pandas as pd
 
 from src.experimentation.build_pipeline import build_pipeline
 from src.experimentation.prep_data import prep_data
+from src.experimentation.tracking import apply_tracking_config, get_tracking_config
 from src.utils.exp import compute_campaign_economics
 
 
@@ -33,14 +34,6 @@ class FeatureSubsetPyfuncModel(mlflow_pyfunc.PythonModel):
                 return (proba[:, 1] >= self.threshold).astype(int)
             return proba
         return self.pipeline.predict(X)
-
-
-def _get_tracking_config(config: dict[str, Any]) -> dict[str, Any]:
-    tracking_cfg = config.get("tracking") or config.get("mlflow") or {}
-    return {
-        "tracking_uri": tracking_cfg.get("tracking_uri"),
-        "experiment_name": tracking_cfg.get("experiment_name"),
-    }
 
 
 def _get_evaluation_config(config: dict[str, Any]) -> dict[str, float]:
@@ -128,7 +121,7 @@ def _predict_positive_class_proba(pipeline: Any, X_test: pd.DataFrame):
 
 
 def evaluate_candidate(config: dict[str, Any], set_experiment: bool = True) -> dict[str, Any]:
-    tracking_cfg = _get_tracking_config(config)
+    tracking_cfg = get_tracking_config(config)
     evaluation_cfg = _get_evaluation_config(config)
     economic_metric_cfg = {
         "threshold": evaluation_cfg["threshold"],
@@ -136,15 +129,8 @@ def evaluate_candidate(config: dict[str, Any], set_experiment: bool = True) -> d
         "retention_rate": evaluation_cfg["retention_rate"],
     }
 
-    tracking_uri = tracking_cfg["tracking_uri"]
-    experiment_name = tracking_cfg["experiment_name"]
     model_name = config["model"]["name"]
-
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
-
-    if set_experiment and experiment_name:
-        mlflow.set_experiment(experiment_name)
+    apply_tracking_config(tracking_cfg, set_experiment=set_experiment)
 
     split_bundle = prep_data(config)
     X_train = split_bundle["X_train"]

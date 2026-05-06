@@ -12,6 +12,7 @@ import pandas as pd
 from sklearn.model_selection import cross_validate
 
 from src.experimentation.build_pipeline import build_pipeline
+from src.utils.exp import build_mlp_optuna_pipeline, build_xgb_optuna_pipeline
 
 if TYPE_CHECKING:
     import optuna
@@ -268,7 +269,7 @@ def should_stop_for_convergence(
     return False
 
 
-def run_optuna_study(
+def _run_configured_optuna_study(
     *,
     model_name: str,
     config: dict[str, Any],
@@ -336,6 +337,149 @@ def run_optuna_study(
     )
     best_params = dict(study.best_trial.params)
     return study, trials_df, convergence_df, best_params, best_row
+
+
+def _run_legacy_optuna_study(
+    *,
+    model_name: str,
+    search_space: dict[str, Any],
+    pipeline_factory: Callable[[dict[str, Any]], Any],
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: dict[str, Any],
+    n_trials: int | None = None,
+    timeout_seconds: int = 3600,
+    convergence_patience_trials: int = 50,
+    convergence_min_improvement: float = 5e-3,
+    random_state: int = 42,
+) -> tuple[Any, pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any]]:
+    """Mantem a assinatura historica do notebook 02 sem afetar o fluxo novo."""
+    optuna = _require_optuna()
+    sampler = optuna.samplers.TPESampler(seed=random_state)
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    trial_records: list[dict[str, Any]] = []
+    primary_metric = "pr_auc" if "pr_auc" in scoring else next(iter(scoring))
+
+    def _objective(trial: Any) -> float:
+        params = suggest_params_from_space(trial, search_space)
+        estimator = pipeline_factory(params)
+        cv_res = cross_validate(
+            estimator,
+            X,
+            y,
+            cv=cv,
+            scoring=scoring,
+            n_jobs=1,
+            return_train_score=False,
+        )
+        metrics = summarize_cv_results(cv_res, scoring)
+        score = metrics[f"{primary_metric}_mean"]
+
+        with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
+            mlflow.log_params(params)
+            for metric_key, metric_value in metrics.items():
+                mlflow.log_metric(metric_key, metric_value)
+
+        trial_records.append(
+            {
+                "trial_number": trial.number,
+                "model_name": model_name,
+                **params,
+                **metrics,
+            }
+        )
+        return score
+
+    def _convergence_callback(study_: Any, trial: Any) -> None:
+        del study_, trial
+        current_df = build_trials_df(trial_records)
+        if should_stop_for_convergence(
+            current_df,
+            patience_trials=convergence_patience_trials,
+            min_improvement=convergence_min_improvement,
+            objective_col=f"{primary_metric}_mean",
+        ):
+            study.stop()
+
+    study.optimize(
+        _objective,
+        n_trials=n_trials,
+        timeout=timeout_seconds,
+        callbacks=[_convergence_callback],
+    )
+
+    trials_df = build_trials_df(trial_records)
+    convergence_df = build_convergence_history(
+        trials_df,
+        objective_col=f"{primary_metric}_mean",
+    )
+
+    if trials_df.empty:
+        raise RuntimeError(f"O estudo do Optuna nao gerou trials para {model_name}.")
+
+    best_trial_number = study.best_trial.number
+    best_row = (
+        trials_df.loc[trials_df["trial_number"] == best_trial_number]
+        .iloc[0]
+        .to_dict()
+    )
+    best_params = dict(study.best_trial.params)
+    return study, trials_df, convergence_df, best_params, best_row
+
+
+def run_optuna_study(
+    *,
+    model_name: str,
+    X: Any,
+    y: Any,
+    cv: Any,
+    scoring: dict[str, Any],
+    config: dict[str, Any] | None = None,
+    search_space: dict[str, Any] | None = None,
+    pipeline_factory: Callable[[dict[str, Any]], Any] | None = None,
+    n_trials: int | None = None,
+    timeout_seconds: int = 3600,
+    convergence_patience_trials: int = 50,
+    convergence_min_improvement: float = 5e-3,
+    random_state: int = 42,
+) -> tuple[Any, pd.DataFrame, pd.DataFrame, dict[str, Any], dict[str, Any]]:
+    """Executa o fluxo novo por config e preserva a assinatura legada do notebook 02."""
+    if config is not None:
+        return _run_configured_optuna_study(
+            model_name=model_name,
+            config=config,
+            X=X,
+            y=y,
+            cv=cv,
+            scoring=scoring,
+            n_trials=n_trials,
+            timeout_seconds=timeout_seconds,
+            convergence_patience_trials=convergence_patience_trials,
+            convergence_min_improvement=convergence_min_improvement,
+            random_state=random_state,
+        )
+
+    if search_space is None or pipeline_factory is None:
+        raise TypeError(
+            "run_optuna_study requer `config` para o fluxo novo ou "
+            "`search_space` e `pipeline_factory` para o contrato legado."
+        )
+
+    return _run_legacy_optuna_study(
+        model_name=model_name,
+        search_space=search_space,
+        pipeline_factory=pipeline_factory,
+        X=X,
+        y=y,
+        cv=cv,
+        scoring=scoring,
+        n_trials=n_trials,
+        timeout_seconds=timeout_seconds,
+        convergence_patience_trials=convergence_patience_trials,
+        convergence_min_improvement=convergence_min_improvement,
+        random_state=random_state,
+    )
 
 
 def _get_search_space(config: dict[str, Any], model_name: str) -> dict[str, Any]:
