@@ -1,21 +1,18 @@
-"""Shared serving helpers for the production model serialized in MLflow."""
+"""Shared serving helpers for the production model serialized as a local pickle."""
 
 from __future__ import annotations
 
 import json
-import os
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-import mlflow
+import joblib
 import numpy as np
 import pandas as pd
 import yaml
 
 from src.evaluation.metrics import compute_metrics
-from src.utils.exp import resolve_tracking_uri
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -78,6 +75,8 @@ FIELD_TO_RAW_COLUMN = {
     "Churn Score": "Churn Score",
 }
 
+KNOWN_RAW_COLUMNS = set(FIELD_TO_RAW_COLUMN.values())
+
 
 @dataclass(frozen=True)
 class ProductionModelSettings:
@@ -87,17 +86,32 @@ class ProductionModelSettings:
     model_name: str
     framework: str
     threshold: float
-    tracking_uri: str
-    model_uri: str
-    run_id: str | None
-    experiment_name: str | None
-    local_artifact_dir: Path
+    model_path: Path
     metadata_path: Path
     required_columns: tuple[str, ...]
     optional_columns: tuple[str, ...]
     input_path: Path
     output_path: Path
     target_column: str | None
+
+
+def _normalize_column_list(columns: Sequence[str]) -> tuple[str, ...]:
+    normalized: list[str] = []
+
+    for column in columns:
+        if column in KNOWN_RAW_COLUMNS:
+            normalized.append(column)
+            continue
+
+        if "-" in column:
+            parts = [part.strip() for part in column.split("-")]
+            if parts and all(part in KNOWN_RAW_COLUMNS for part in parts):
+                normalized.extend(parts)
+                continue
+
+        normalized.append(column)
+
+    return tuple(normalized)
 
 
 def load_yaml_config(config_path: str | Path = CONFIG_PATH) -> dict[str, Any]:
@@ -116,35 +130,19 @@ def load_production_settings(
     production_cfg = config["production"]
     model_key = production_cfg["active_model"]
     model_cfg = production_cfg["models"][model_key]
-    source_cfg = model_cfg["source"]
     local_cfg = model_cfg["local"]
     inference_cfg = model_cfg["inference"]
     pipeline_cfg = model_cfg["pipeline"]
-
-    # MLFLOW_TRACKING_URI env var takes precedence (e.g. http://mlflow:5000 in Docker)
-    env_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
-    tracking_uri = (
-        env_tracking_uri
-        if env_tracking_uri
-        else resolve_tracking_uri(
-            source_cfg["tracking_uri"],
-            workspace_root=workspace_root,
-        )
-    )
 
     return ProductionModelSettings(
         model_key=model_key,
         model_name=model_cfg["display_name"],
         framework=model_cfg["framework"],
         threshold=float(model_cfg["threshold"]),
-        tracking_uri=tracking_uri,
-        model_uri=source_cfg["model_uri"],
-        run_id=source_cfg.get("run_id"),
-        experiment_name=source_cfg.get("experiment_name"),
-        local_artifact_dir=Path(workspace_root) / local_cfg["artifact_dir"],
+        model_path=Path(workspace_root) / model_cfg["model_path"],
         metadata_path=Path(workspace_root) / local_cfg["metadata_path"],
-        required_columns=tuple(pipeline_cfg["required_columns"]),
-        optional_columns=tuple(pipeline_cfg.get("optional_columns", [])),
+        required_columns=_normalize_column_list(pipeline_cfg["required_columns"]),
+        optional_columns=_normalize_column_list(pipeline_cfg.get("optional_columns", [])),
         input_path=Path(workspace_root) / inference_cfg["input_path"],
         output_path=Path(workspace_root) / inference_cfg["output_path"],
         target_column=inference_cfg.get("target_column"),
@@ -201,10 +199,7 @@ def _build_serving_metadata(settings: ProductionModelSettings) -> dict[str, Any]
         "model_name": settings.model_name,
         "framework": settings.framework,
         "threshold": settings.threshold,
-        "tracking_uri": settings.tracking_uri,
-        "model_uri": settings.model_uri,
-        "run_id": settings.run_id,
-        "experiment_name": settings.experiment_name,
+        "model_path": str(settings.model_path),
         "required_columns": list(settings.required_columns),
         "optional_columns": list(settings.optional_columns),
     }
@@ -215,42 +210,21 @@ def materialize_production_model(
     *,
     force_download: bool = False,
 ) -> Path:
-    """Download the serialized MLflow model to a stable local artifact directory."""
-    mlmodel_path = settings.local_artifact_dir / "MLmodel"
-    if mlmodel_path.exists() and not force_download:
-        if not settings.metadata_path.exists():
-            settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-            settings.metadata_path.write_text(
-                json.dumps(
-                    _build_serving_metadata(settings), indent=2, ensure_ascii=False
-                ),
-                encoding="utf-8",
-            )
-        return settings.local_artifact_dir
-
-    download_root = settings.local_artifact_dir.parent / "_mlflow_downloads"
-    download_root.mkdir(parents=True, exist_ok=True)
-
-    downloaded_dir = Path(
-        mlflow.artifacts.download_artifacts(
-            artifact_uri=settings.model_uri,
-            dst_path=str(download_root),
-            tracking_uri=settings.tracking_uri,
+    """Validate the local model artifact and ensure serving metadata exists."""
+    del force_download
+    if not settings.model_path.exists():
+        raise FileNotFoundError(
+            f"Production model artifact not found: {settings.model_path}"
         )
-    )
 
-    if settings.local_artifact_dir.exists():
-        shutil.rmtree(settings.local_artifact_dir)
+    if not settings.metadata_path.exists():
+        settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        settings.metadata_path.write_text(
+            json.dumps(_build_serving_metadata(settings), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
-    shutil.copytree(downloaded_dir, settings.local_artifact_dir)
-    settings.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-    settings.metadata_path.write_text(
-        json.dumps(_build_serving_metadata(settings), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    logger.info("Modelo de producao materializado em %s", settings.local_artifact_dir)
-    return settings.local_artifact_dir
+    return settings.model_path
 
 
 def load_production_model(
@@ -258,19 +232,14 @@ def load_production_model(
     *,
     prefer_local: bool = True,
 ) -> Any:
-    """Load the active production model using the configured MLflow flavor."""
-    mlflow.set_tracking_uri(settings.tracking_uri)
+    """Load the active production model from the configured local pickle."""
+    del prefer_local
+    model_path = materialize_production_model(settings)
 
-    source_path = settings.model_uri
-    if prefer_local:
-        source_path = str(materialize_production_model(settings))
+    if settings.framework != "sklearn":
+        raise ValueError(f"Unsupported production framework: {settings.framework}")
 
-    if settings.framework == "sklearn":
-        return mlflow.sklearn.load_model(source_path)
-    if settings.framework == "pyfunc":
-        return mlflow.pyfunc.load_model(source_path)
-
-    raise ValueError(f"Unsupported production framework: {settings.framework}")
+    return joblib.load(model_path)
 
 
 def predict_with_threshold(

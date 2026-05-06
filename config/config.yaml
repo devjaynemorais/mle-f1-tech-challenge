@@ -2,87 +2,72 @@ experiment:
   name: churn_baseline
   random_state: 42
   test_size: 0.3
-
 data:
-
   raw_path: data/raw/Telco_customer_churn.xlsx
   interim_path: data/interim/telecom_clean.csv
   train_path: data/processed/train.csv
   test_path: data/processed/test.csv
-
 features:
   target_column: Churn Value
-
   drop_columns:
-    - Zip Code
-    - Latitude
-    - Longitude
-    - Lat Long
-  
-
+  - Zip Code
+  - Latitude
+  - Longitude
+  - Lat Long
   categorical_columns:
-    - Gender
-    - Senior Citizen
-    - Partner
-    - Dependents
-    - Phone Service
-    - Multiple Lines
-    - Internet Service
-    - Online Security
-    - Online Backup
-    - Device Protection
-    - Tech Support
-    - Streaming TV
-    - Streaming Movies
-    - Contract
-    - Paperless Billing
-    - Payment Method
-
+  - Gender
+  - Senior Citizen
+  - Partner
+  - Dependents
+  - Phone Service
+  - Multiple Lines
+  - Internet Service
+  - Online Security
+  - Online Backup
+  - Device Protection
+  - Tech Support
+  - Streaming TV
+  - Streaming Movies
+  - Contract
+  - Paperless Billing
+  - Payment Method
   numerical_columns:
-    - Tenure Months
-    - Monthly Charges
-    - Total Charges
-    - CLTV
-
-  # =====================
-  # REMOÇÃO (baseline)
-  # =====================
-
+  - Tenure Months
+  - Monthly Charges
+  - Total Charges
+  - CLTV
   drop_churn_score:
     enabled: true
-
   drop_city:
     enabled: true
-
-
-  # =====================
-  # FEATURES (todas OFF no baseline)
-  # =====================
   valuable_high_risk:
     enabled: false
     cltv_col: CLTV
     churn_score_col: Churn Score
     cltv_threshold: 5000
     churn_score_threshold: 75
-
   engagement_score:
     enabled: false
     services:
-      - Online Security
-      - Tech Support
-      - Online Backup
-      - Device Protection
-
+    - Online Security
+    - Tech Support
+    - Online Backup
+    - Device Protection
   tenure_group:
     enabled: false
     tenure_col: tenure
-    bins: [0, 6, 12, 100]
-    labels: ["new", "mid", "loyal"]
-
+    bins:
+    - 0
+    - 6
+    - 12
+    - 100
+    labels:
+    - new
+    - mid
+    - loyal
   tenure_log:
     enabled: false
     column: Tenure Months
-
   contract_ordinal:
     enabled: false
     contract_col: Contract
@@ -90,25 +75,19 @@ features:
       Month-to-month: 2
       One year: 1
       Two year: 0
-
   family_stability:
     enabled: false
     partner_col: Partner
     dependents_col: Dependents
-
   fiber_no_support:
     enabled: false
     internet_col: Internet Service
     support_col: Tech Support
-
   city_freq_encoding:
     enabled: false
     city_col: City
-
   city_region_mapping:
     enabled: false
-
-
 model:
   name: mlp
   random_state: 42
@@ -116,82 +95,67 @@ model:
   model_path: models/mlp_baseline.pt
   scaler_path: models/scaler.pkl
   mlp_scaler_path: models/mlp_scaler.pkl
-
   params:
     C: 1.0
     max_iter: 1000
     class_weight: balanced
-
-
 validation:
   method: stratified_kfold
   n_splits: 10
   shuffle: true
-
-
 mlflow:
   experiment_name: Churn_Prediction_Pipeline
   tracking_uri: sqlite:///mlflow.db
-
 production:
   active_model: mlp_optuna_prod
-
   models:
     mlp_optuna_prod:
       display_name: MLP Optuna
       framework: sklearn
-      threshold: 0.35
-
-      source:
-        tracking_uri: sqlite:///mlflow.db
-        experiment_name: tc-f1-nb03-MLP-production-performance
-        run_id: 94d69e420cd84472a8aeb4f9a7a31dc5
-        model_uri: runs:/94d69e420cd84472a8aeb4f9a7a31dc5/model
-
+      threshold: 0.33
+      model_path: models/production/mlp_optuna/model.pkl
       local:
         artifact_dir: models/production/mlp_optuna
         metadata_path: models/production/mlp_optuna/serving_metadata.json
-
       pipeline:
         type: sklearn_pipeline
         steps:
-          - fe
-          - geo
-          - prep
-          - selector
-          - model
+        - fe
+        - geo
+        - prep
+        - selector
+        - model
         custom_transformers:
-          - src.features.custom_transformers.FeatureEngineerTransformer
-          - src.features.custom_transformers.GeoTransformer
+        - src.features.custom_transformers.FeatureEngineerTransformer
+        - src.features.custom_transformers.GeoTransformer
         required_columns:
-          - Gender
-          - Senior Citizen
-          - Partner
-          - Dependents
-          - Tenure Months
-          - Phone Service
-          - Multiple Lines
-          - Internet Service
-          - Online Security
-          - Online Backup
-          - Device Protection
-          - Tech Support
-          - Streaming TV
-          - Streaming Movies
-          - Contract
-          - Paperless Billing
-          - Payment Method
-          - Monthly Charges
-          - Total Charges
-          - CLTV
+        - Gender
+        - Senior Citizen
+        - Partner
+        - Dependents
+        - Tenure Months
+        - Phone Service
+        - Multiple Lines
+        - Internet Service
+        - Online Security
+        - Online Backup
+        - Device Protection
+        - Tech Support
+        - Streaming TV
+        - Streaming Movies
+        - Contract
+        - Paperless Billing
+        - Payment Method
+        - Monthly Charges
+        - Total Charges
+        - CLTV
         optional_columns:
-          - City
-          - Zip Code
-          - Latitude
-          - Longitude
-          - Lat Long
-          - Churn Score
-
+        - City
+        - Zip Code
+        - Latitude
+        - Longitude
+        - Lat Long
+        - Churn Score
       inference:
         input_path: data/interim/telecom_clean.csv
         output_path: models/predictions/mlp_optuna_predictions.csv
