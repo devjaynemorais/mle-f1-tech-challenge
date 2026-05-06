@@ -3,7 +3,22 @@ set -e
 
 case "$1" in
   experiment)
-    exec python run_experiment.py
+    shift
+    exec python -m src.experimentation.run_experiment "$@"
+    ;;
+  setup)
+    shift
+    exec python run_setup.py "$@"
+    ;;
+  optuna)
+    shift
+    if [ "$#" -gt 0 ]; then
+      exec python -m src.experimentation.run_optuna "$@"
+    fi
+    if [ -n "$OPTUNA_CONFIG_PATH" ]; then
+      exec python -m src.experimentation.run_optuna "$OPTUNA_CONFIG_PATH"
+    fi
+    exec python -m src.experimentation.run_optuna
     ;;
   train)
     exec python run_train.py

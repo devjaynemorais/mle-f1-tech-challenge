@@ -1,17 +1,17 @@
 .PHONY: env lint test experiment setup train inference api mlflow \
-        compose-build compose-up compose-experiment compose-train compose-down compose-monitoring compose-full
+        compose-build compose-up compose-experiment compose-setup compose-optuna compose-train compose-down compose-monitoring compose-full
 
 env:
 	uv sync --extra dev
 
 experiment:
-	uv run python run_experiment.py
+	uv run python -m src.experimentation.run_experiment
 
 train:
 	uv run python run_train.py
 
 setup:
-	uv run python src/models/prepare_production_model.py
+	uv run python run_setup.py
 
 lint:
 	uv run ruff check .
@@ -35,6 +35,14 @@ compose-build:
 compose-experiment:
 	docker compose up -d mlflow
 	docker compose run --rm experiment
+
+compose-setup:
+	docker compose up -d mlflow
+	docker compose run --rm setup
+
+compose-optuna:
+	docker compose up -d mlflow
+	docker compose run --rm optuna
 
 compose-train:
 	docker compose up -d mlflow

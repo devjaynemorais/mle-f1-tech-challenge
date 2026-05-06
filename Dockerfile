@@ -6,7 +6,7 @@ COPY pyproject.toml ./
 COPY src/ ./src/
 COPY config/ ./config/
 COPY models/ ./models/
-COPY run_train.py run_inference.py run_experiment.py entrypoint.sh ./
+COPY run_setup.py run_train.py run_inference.py entrypoint.sh ./
 
 RUN pip install --no-cache-dir -e . && chmod +x entrypoint.sh
 

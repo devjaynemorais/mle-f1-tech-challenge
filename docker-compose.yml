@@ -31,6 +31,36 @@ services:
     depends_on:
       mlflow:
         condition: service_healthy
+    networks:
+      - mle-network
+
+  setup:
+    build: .
+    command: setup
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - mle-network
+
+  optuna:
+    build: .
+    command: optuna
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - mle-network
 
   train:
     build: .
