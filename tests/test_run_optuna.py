@@ -12,6 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 def test_run_optuna_logs_parent_run_and_writes_best_yaml(monkeypatch, tmp_path):
     from src.experimentation import run_optuna as run_optuna_module
 
+    monkeypatch.setattr(run_optuna_module, "CONFIG_DIR", tmp_path)
+
     config_path = tmp_path / "experiments" / "mlp.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text("model:\n  name: mlp\n", encoding="utf-8")
