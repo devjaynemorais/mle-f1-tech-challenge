@@ -7,9 +7,9 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "http://127.0.0.1:8000",
+      "value": "http://localhost:8000",
       "type": "string",
-      "description": "URL base da API. Troque para http://localhost:8000 (local) ou a URL do deploy em nuvem."
+      "description": "URL base da API. Troque para a URL do deploy em nuvem se necessário."
     }
   ],
   "item": [
@@ -168,6 +168,11 @@
           "originalRequest": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"records\": [\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"No\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 1,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Electronic check\",\n      \"Monthly Charges\": 70.0,\n      \"Total Charges\": 70.0,\n      \"CLTV\": 2000\n    },\n    {\n      \"gender\": \"Female\",\n      \"Senior Citizen\": \"Yes\",\n      \"partner\": \"No\",\n      \"dependents\": \"No\",\n      \"Tenure Months\": 12,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"No\",\n      \"Internet Service\": \"Fiber optic\",\n      \"Online Security\": \"No\",\n      \"Online Backup\": \"No\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"No\",\n      \"Streaming TV\": \"Yes\",\n      \"Streaming Movies\": \"Yes\",\n      \"contract\": \"Month-to-month\",\n      \"Paperless Billing\": \"Yes\",\n      \"Payment Method\": \"Mailed check\",\n      \"Monthly Charges\": 95.0,\n      \"Total Charges\": 1140.0,\n      \"CLTV\": 3200\n    },\n    {\n      \"gender\": \"Male\",\n      \"Senior Citizen\": \"No\",\n      \"partner\": \"Yes\",\n      \"dependents\": \"Yes\",\n      \"Tenure Months\": 48,\n      \"Phone Service\": \"Yes\",\n      \"Multiple Lines\": \"Yes\",\n      \"Internet Service\": \"DSL\",\n      \"Online Security\": \"Yes\",\n      \"Online Backup\": \"Yes\",\n      \"Device Protection\": \"No\",\n      \"Tech Support\": \"Yes\",\n      \"Streaming TV\": \"No\",\n      \"Streaming Movies\": \"No\",\n      \"contract\": \"One year\",\n      \"Paperless Billing\": \"No\",\n      \"Payment Method\": \"Credit card (automatic)\",\n      \"Monthly Charges\": 55.0,\n      \"Total Charges\": 2640.0,\n      \"CLTV\": 4900\n    }\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
             "url": {
               "raw": "{{base_url}}/predict",
               "host": ["{{base_url}}"],

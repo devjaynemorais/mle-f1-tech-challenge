@@ -1,8 +1,14 @@
-.PHONY: env lint test setup train inference api mlflow \
-        compose-build compose-up compose-train compose-down compose-monitoring compose-full
+.PHONY: env lint test experiment setup train inference api mlflow \
+        compose-build compose-up compose-experiment compose-setup compose-optuna compose-train compose-down compose-monitoring compose-full
 
 env:
 	uv sync --extra dev
+
+experiment:
+	uv run python -m src.experimentation.run_experiment
+
+train:
+	uv run python run_train.py
 
 setup:
 	uv run python run_setup.py
@@ -13,21 +19,30 @@ lint:
 test:
 	uv run pytest tests/ -v
 
-train:
-	uv run python run_train.py
-
 inference:
 	uv run python run_inference.py
 
 api:
-	uv run uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+	uv run uvicorn src.api.main:app --reload --host localhost --port 8000
 
 mlflow:
-	uv run mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db --allowed-hosts "127.0.0.1,127.0.0.1:5000"
+	uv run mlflow ui --host 127.0.0.1 --port 5000 --backend-store-uri sqlite:///mlflow.db --allowed-hosts "localhost,localhost:5000"
 
 # --- Docker Compose ---
 compose-build:
 	docker compose build
+
+compose-experiment:
+	docker compose up -d mlflow
+	docker compose run --rm experiment
+
+compose-setup:
+	docker compose up -d mlflow
+	docker compose run --rm setup
+
+compose-optuna:
+	docker compose up -d mlflow
+	docker compose run --rm optuna
 
 compose-train:
 	docker compose up -d mlflow

@@ -1,0 +1,125 @@
+# YAML completo para tuning Optuna com XGBoost.
+# Parent run consolida o melhor resultado; child runs registram os trials.
+
+data:
+  raw_path: data/raw/Telco_customer_churn.xlsx
+  target: Churn Value
+  test_size: 0.3
+  random_state: 42
+  drop_cols:
+    - Country
+    - State
+    - Lat Long
+    - Churn Label
+    - Churn Reason
+    - Count
+  meta_cols:
+    - CLTV
+    - CustomerID
+
+features:
+  engineering:
+    drop_churn_score: true
+    add_engagement_score: false
+    add_tenure_group: false
+    add_tenure_log: false
+    add_contract_ordinal: false
+    add_family_stability: false
+    add_fiber_no_support: false
+    add_support_gap_count: false
+    add_payment_automatic_flag: false
+    add_electronic_check_flag: false
+    add_paperless_echeck_flag: false
+    add_price_pressure_ratio: false
+  geo:
+    strategy: drop
+
+preprocessing:
+  scaler:
+    type: standard
+    params:
+      with_mean: false
+
+model:
+  name: xgboost
+  params:
+    objective: binary:logistic
+    eval_metric: logloss
+    random_state: 42
+    n_jobs: 1
+    n_estimators: 200
+    max_depth: 4
+    learning_rate: 0.05
+    min_child_weight: 1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    gamma: 0.0
+    reg_alpha: 0.0
+    reg_lambda: 1.0
+
+cv:
+  type: stratified_kfold
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+  n_jobs: 1
+  scoring:
+    pr_auc: average_precision
+    roc_auc: roc_auc
+    recall: recall
+    precision: precision
+    f1_score: f1
+
+tracking:
+  experiment_name: optuna-xgb
+  tracking_uri: sqlite:///mlflow.db
+
+tuning:
+  primary_metric: pr_auc
+  direction: maximize
+  n_trials: 25
+  timeout_seconds: 1800
+  convergence_patience_trials: 50
+  convergence_min_improvement: 0.005
+  search_space:
+    n_estimators:
+      - 200
+      - 250
+      - 300
+    max_depth:
+      low: 3
+      high: 5
+      step: 1
+    learning_rate:
+      low: 0.01
+      high: 0.03
+      log: true
+    min_child_weight:
+      low: 1
+      high: 3
+      step: 1
+    subsample:
+      low: 0.5
+      high: 1.0
+      step: 0.1
+    colsample_bytree:
+      low: 0.5
+      high: 1.0
+      step: 0.1
+    gamma:
+      low: 0.0
+      high: 0.6
+      step: 0.2
+    reg_alpha:
+      low: 0.0
+      high: 0.5
+      step: 0.1
+    reg_lambda:
+      low: 2
+      high: 10.0
+      log: true
+
+evaluation:
+  threshold: 0.5
+  activation_cost: 50.0
+  retention_rate: 0.1

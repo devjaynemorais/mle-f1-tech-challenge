@@ -28,7 +28,7 @@ class ChurnPredictor:
             workspace_root=BASE_DIR,
         )
         self.model_name = self.settings.model_name
-        self.model_uri = self.settings.model_uri
+        self.model_uri = str(self.settings.model_path)
         self.threshold = self.settings.threshold
         self.model_path = str(materialize_production_model(self.settings))
         self._model = load_production_model(self.settings, prefer_local=True)

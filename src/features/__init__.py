@@ -8,8 +8,7 @@ from .encoders import (
     TargetEncoder,
     ZipRegionEncoder,
 )
-from .feature_engineer_transformer import FeatureEngineerTransformer
-from .geo_transformer import GeoTransformer
+from .custom_transformers import FeatureEngineerTransformer, GeoTransformer
 
 __all__ = [
     "ClusterEncoder",

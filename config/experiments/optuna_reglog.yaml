@@ -1,0 +1,86 @@
+# YAML completo para tuning Optuna com Regressao Logistica.
+# Parent run consolida o melhor resultado; child runs registram os trials.
+
+data:
+  raw_path: data/raw/Telco_customer_churn.xlsx
+  target: Churn Value
+  test_size: 0.3
+  random_state: 42
+  drop_cols:
+    - Country
+    - State
+    - Lat Long
+    - Churn Label
+    - Churn Reason
+    - Count
+  meta_cols:
+    - CLTV
+    - CustomerID
+
+features:
+  engineering:
+    drop_churn_score: true
+    add_engagement_score: false
+    add_tenure_group: false
+    add_tenure_log: false
+    add_contract_ordinal: false
+    add_family_stability: false
+    add_fiber_no_support: false
+    add_support_gap_count: false
+    add_payment_automatic_flag: false
+    add_electronic_check_flag: false
+    add_paperless_echeck_flag: false
+    add_price_pressure_ratio: false
+  geo:
+    strategy: drop
+
+preprocessing:
+  scaler:
+    type: standard
+    params:
+      with_mean: false
+
+model:
+  name: logistic_regression
+  params:
+    C: 1.0
+    max_iter: 1000
+    class_weight: balanced
+
+cv:
+  type: stratified_kfold
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+  n_jobs: 1
+  scoring:
+    pr_auc: average_precision
+    roc_auc: roc_auc
+    recall: recall
+    precision: precision
+    f1_score: f1
+
+tracking:
+  experiment_name: optuna-logistic
+  tracking_uri: sqlite:///mlflow.db
+
+tuning:
+  primary_metric: pr_auc
+  direction: maximize
+  n_trials: 25
+  timeout_seconds: 1800
+  convergence_patience_trials: 50
+  convergence_min_improvement: 0.005
+  search_space:
+    C:
+      low: 0.01
+      high: 10.0
+      log: true
+    class_weight:
+      - balanced
+      - null
+
+evaluation:
+  threshold: 0.5
+  activation_cost: 50.0
+  retention_rate: 0.1

@@ -20,6 +20,48 @@ services:
       retries: 12
       start_period: 10s
 
+  experiment:
+    build: .
+    command: experiment
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - mle-network
+
+  setup:
+    build: .
+    command: setup
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - mle-network
+
+  optuna:
+    build: .
+    command: optuna
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    networks:
+      - mle-network
+
   train:
     build: .
     command: train
@@ -28,6 +70,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+      - ./config:/app/config
     networks:
       - mle-network
     depends_on:

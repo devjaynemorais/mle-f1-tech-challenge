@@ -45,8 +45,7 @@ except (
 ):  # pragma: no cover - exercised when dependency is absent locally
     XGBClassifier = None
 
-from src.features.feature_engineer_transformer import FeatureEngineerTransformer
-from src.features.geo_transformer import GeoTransformer
+from src.features.custom_transformers import FeatureEngineerTransformer, GeoTransformer
 from src.models.mlp import DEFAULT_DEVICE, MLP, CityEmbeddingMLP
 
 DEFAULT_METRICS = ("pr_auc", "roc_auc", "recall", "precision", "f1")
@@ -476,6 +475,49 @@ def build_optuna_mlp_pipeline(optuna_params: dict[str, Any]) -> Pipeline:
     )
 
 
+def build_mlp_optuna_pipeline(
+    *,
+    preprocessor: Any,
+    fe_params: dict[str, Any],
+    params: dict[str, Any],
+) -> Pipeline:
+    """Builder legado do notebook 02 preservado por compatibilidade."""
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**fe_params)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", clone(preprocessor)),
+            (
+                "selector",
+                SelectKBest(
+                    score_func=f_classif,
+                    k=int(params["selector__k"]),
+                ),
+            ),
+            ("scaler", StandardScaler(with_mean=False)),
+            (
+                "model",
+                MLPClassifierWrapper(
+                    output_dim=1,
+                    activation=str(params["model__activation"]),
+                    hidden_dim=int(params["model__hidden_dim"]),
+                    dropout=float(params["model__dropout"]),
+                    lr=float(params["model__lr"]),
+                    weight_decay=float(params["model__weight_decay"]),
+                    batch_size=int(params["model__batch_size"]),
+                    max_epochs=80,
+                    patience=16,
+                    min_delta=1e-3,
+                    threshold=0.5,
+                    val_size=0.15,
+                    random_state=42,
+                    verbose=False,
+                ),
+            ),
+        ]
+    )
+
+
 def build_optuna_xgb_pipeline(
     optuna_params: dict[str, Any],
     *,
@@ -507,6 +549,45 @@ def build_optuna_xgb_pipeline(
                     gamma=float(optuna_params["model__gamma"]),
                     reg_alpha=float(optuna_params["model__reg_alpha"]),
                     reg_lambda=float(optuna_params["model__reg_lambda"]),
+                ),
+            ),
+        ]
+    )
+
+
+def build_xgb_optuna_pipeline(
+    *,
+    preprocessor: Any,
+    fe_params: dict[str, Any],
+    params: dict[str, Any],
+    y_reference: Any,
+) -> Pipeline:
+    """Builder legado do notebook 02 preservado por compatibilidade."""
+    xgb_classifier = require_xgboost()
+    y_arr = np.asarray(y_reference)
+    scale_pos_weight = float((y_arr == 0).sum()) / max(float((y_arr == 1).sum()), 1.0)
+    return Pipeline(
+        [
+            ("fe", FeatureEngineerTransformer(**fe_params)),
+            ("geo", GeoTransformer(strategy="drop")),
+            ("prep", clone(preprocessor)),
+            (
+                "model",
+                xgb_classifier(
+                    objective="binary:logistic",
+                    eval_metric="logloss",
+                    random_state=42,
+                    n_jobs=-1,
+                    scale_pos_weight=scale_pos_weight,
+                    n_estimators=int(params["model__n_estimators"]),
+                    max_depth=int(params["model__max_depth"]),
+                    learning_rate=float(params["model__learning_rate"]),
+                    min_child_weight=int(params["model__min_child_weight"]),
+                    subsample=float(params["model__subsample"]),
+                    colsample_bytree=float(params["model__colsample_bytree"]),
+                    gamma=float(params["model__gamma"]),
+                    reg_alpha=float(params["model__reg_alpha"]),
+                    reg_lambda=float(params["model__reg_lambda"]),
                 ),
             ),
         ]

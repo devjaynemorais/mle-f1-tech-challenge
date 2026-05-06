@@ -1,4 +1,4 @@
-"""Materializa localmente o artefato de producao serializado no MLflow."""
+"""Valida e prepara localmente o artefato de producao serializado em pickle."""
 # ruff: noqa: E402
 from __future__ import annotations
 
@@ -27,12 +27,12 @@ logger = get_logger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Baixa e prepara o modelo de producao a partir do MLflow.",
+        description="Valida e prepara o modelo de producao local.",
     )
     parser.add_argument(
         "--force-download",
         action="store_true",
-        help="Forca novo download do artefato mesmo se ele ja existir localmente.",
+        help="Parametro legado. Mantido por compatibilidade, sem efeito no fluxo local.",
     )
     return parser.parse_args()
 
@@ -46,9 +46,8 @@ def prepare_production_model(force_download: bool = False) -> Path:
     loaded_model = load_production_model(settings, prefer_local=True)
 
     logger.info("Modelo ativo: %s", settings.model_name)
-    logger.info("Model URI: %s", settings.model_uri)
-    logger.info("Threshold de producao: %.2f", settings.threshold)
     logger.info("Artefato local: %s", local_artifact_dir)
+    logger.info("Threshold de producao: %.2f", settings.threshold)
     logger.info("Classe carregada: %s", type(loaded_model).__name__)
 
     return local_artifact_dir
