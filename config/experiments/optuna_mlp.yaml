@@ -78,7 +78,7 @@ tracking:
 tuning:
   primary_metric: pr_auc
   direction: maximize
-  n_trials: 10
+  n_trials: 50
   timeout_seconds: 1800
   convergence_patience_trials: 50
   convergence_min_improvement: 0.005
