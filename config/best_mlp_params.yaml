@@ -38,12 +38,12 @@ model:
   name: mlp
   params:
     output_dim: 1
-    hidden_dim: 47
+    hidden_dim: 57
     activation: tanh
-    dropout: 0.3
-    lr: 0.0003815280135767075
-    weight_decay: 1.0e-06
-    batch_size: 128
+    dropout: 0.2
+    lr: 0.0005034393902930643
+    weight_decay: 0.0
+    batch_size: 64
     max_epochs: 80
     patience: 16
     min_delta: 0.001
@@ -70,7 +70,7 @@ tracking:
 tuning:
   primary_metric: pr_auc
   direction: maximize
-  n_trials: 10
+  n_trials: 50
   timeout_seconds: 1800
   convergence_patience_trials: 50
   convergence_min_improvement: 0.005
@@ -111,16 +111,16 @@ optuna_result:
   source_config: config\experiments\optuna_mlp.yaml
   primary_metric: pr_auc
   best_metrics:
-    pr_auc_mean: 0.9401525383447954
-    pr_auc_std: 0.012026883776694924
-    roc_auc_mean: 0.9763063186516142
-    roc_auc_std: 0.004986660391698972
-    recall_mean: 0.9281126612266386
-    recall_std: 0.029797088290773592
-    precision_mean: 0.7815566182930492
-    precision_std: 0.00815260361609786
-    f1_score_mean: 0.848175567607556
-    f1_score_std: 0.008013848217782473
-    fit_time_mean: 2.4444657802581786
-    score_time_mean: 0.027310800552368165
-  best_trial_number: 2
+    pr_auc_mean: 0.9399488000435496
+    pr_auc_std: 0.01113254820598026
+    roc_auc_mean: 0.9762348360973914
+    roc_auc_std: 0.004575595381547281
+    recall_mean: 0.9296335292913339
+    recall_std: 0.03378219500294108
+    precision_mean: 0.7743396666249696
+    precision_std: 0.015038050950349314
+    f1_score_mean: 0.8442843093987458
+    f1_score_std: 0.007106066739107304
+    fit_time_mean: 4.460387229919434
+    score_time_mean: 0.04146900177001953
+  best_trial_number: 10
