@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -205,16 +206,206 @@ def _build_serving_metadata(settings: ProductionModelSettings) -> dict[str, Any]
     }
 
 
+def _get_production_run_id(config: dict[str, Any] | None = None) -> str | None:
+    """Extrai o run_id da configuracao de producao, se existir."""
+    if config is None:
+        config = load_yaml_config()
+    production_cfg = config.get("production", {})
+    source_cfg = production_cfg.get("source", {})
+    return source_cfg.get("run_id")
+
+
 def materialize_production_model(
     settings: ProductionModelSettings,
     *,
     force_download: bool = False,
 ) -> Path:
-    """Validate the local model artifact and ensure serving metadata exists."""
-    del force_download
-    if not settings.model_path.exists():
+    """Validate the local model artifact and ensure serving metadata exists.
+
+    If the model does not exist locally and force_download is True, attempt to
+    download it from MLflow using the run_id from config or the best available run.
+    """
+    if settings.model_path.exists() and not force_download:
+        logger.info("Modelo local encontrado: %s", settings.model_path)
+    elif force_download:
+        logger.info("Baixando modelo do MLflow para: %s", settings.model_path)
+        try:
+            import mlflow
+            from mlflow.tracking import MlflowClient
+
+            tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlflow.db")
+            mlflow.set_tracking_uri(tracking_uri)
+            client = MlflowClient(tracking_uri=tracking_uri)
+
+            # Tenta obter o run_id do config.yaml
+            config = load_yaml_config()
+            run_id = _get_production_run_id(config)
+
+            if run_id:
+                # Verifica se o run existe
+                try:
+                    run = client.get_run(run_id)
+                    logger.info("Usando run_id do config: %s", run_id)
+                except Exception:
+                    logger.warning(
+                        "run_id do config nao existe (%s), buscando melhor run...", run_id
+                    )
+                    run_id = None
+
+            if not run_id:
+                # Busca o melhor run disponivel
+                possible_names = [
+                    "churn-baseline",
+                    "Churn_Prediction_Pipeline",
+                    "churn_prediction_pipeline",
+                    "mlp_optuna",
+                    "optuna-mlp",
+                ]
+
+                experiment = None
+                for name in possible_names:
+                    experiment = client.get_experiment_by_name(name)
+                    if experiment is not None:
+                        logger.info("Experimento MLflow encontrado: %s", name)
+                        break
+
+                if experiment is None:
+                    all_experiments = mlflow.search_experiments()
+                    exp_names = [e.name for e in all_experiments]
+                    raise RuntimeError(
+                        f"Experimento nao encontrado no MLflow. "
+                        f"Experimentos disponiveis: {exp_names}"
+                    )
+
+                # Busca o run com melhor f1_score
+                runs = client.search_runs(
+                    experiment_ids=[experiment.experiment_id],
+                    order_by=["metrics.f1_score DESC", "start_time DESC"],
+                    max_results=1,
+                )
+
+                if not runs:
+                    runs = client.search_runs(
+                        experiment_ids=[experiment.experiment_id],
+                        order_by=["start_time DESC"],
+                        max_results=1,
+                    )
+
+                if not runs:
+                    raise RuntimeError(
+                        f"Nenhum run encontrado no experimento '{experiment.name}'"
+                    )
+
+                run_id = runs[0].info.run_id
+                logger.info("Melhor run encontrado: %s", run_id)
+
+            # Baixa o modelo do MLflow - tenta multiplas abordagens
+            model_uri = f"runs:/{run_id}/model"
+            logger.info("Tentando baixar modelo de: %s", model_uri)
+
+            import shutil
+
+            model_downloaded = False
+
+            # Abordagem 1: Tenta copiar diretamente do filesystem do MLflow
+            # Os modelos estao em mlruns/X/models/m-xxx/artifacts/model.pkl
+            mlruns_dir = BASE_DIR / "mlruns"
+            if mlruns_dir.exists():
+                for exp_dir in mlruns_dir.iterdir():
+                    if not exp_dir.is_dir() or exp_dir.name.startswith("."):
+                        continue
+
+                    models_dir = exp_dir / "models"
+                    if not models_dir.exists():
+                        continue
+
+                    for model_dir in models_dir.iterdir():
+                        if not model_dir.is_dir():
+                            continue
+
+                        artifacts_dir = model_dir / "artifacts"
+                        if not artifacts_dir.exists():
+                            continue
+
+                        model_file = artifacts_dir / "model.pkl"
+                        if model_file.exists():
+                            settings.model_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(model_file, settings.model_path)
+                            logger.info(
+                                "Modelo copiado do filesystem MLflow: %s -> %s",
+                                model_file,
+                                settings.model_path,
+                            )
+                            model_downloaded = True
+                            break
+
+                        # Tenta outros formatos
+                        other_files = list(artifacts_dir.glob("*.pkl"))
+                        if other_files:
+                            settings.model_path.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(other_files[0], settings.model_path)
+                            logger.info(
+                                "Modelo copiado (arquivo: %s): %s",
+                                other_files[0].name,
+                                settings.model_path,
+                            )
+                            model_downloaded = True
+                            break
+
+                    if model_downloaded:
+                        break
+
+            # Abordagem 2: Tenta mlflow.artifacts.download_artifacts
+            if not model_downloaded:
+                try:
+                    local_model_path = mlflow.artifacts.download_artifacts(
+                        model_uri,
+                        dst_path=str(settings.model_path.parent),
+                    )
+
+                    model_file = Path(local_model_path) / "model.pkl"
+                    if model_file.exists():
+                        settings.model_path.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(model_file, settings.model_path)
+                        logger.info("Modelo baixado com sucesso: %s", settings.model_path)
+                        model_downloaded = True
+                except Exception as e1:
+                    logger.warning("download_artifacts falhou: %s", e1)
+
+            # Abordagem 3: Tenta mlflow.sklearn.load_model
+            if not model_downloaded:
+                try:
+                    model = mlflow.sklearn.load_model(model_uri)
+                    settings.model_path.parent.mkdir(parents=True, exist_ok=True)
+                    joblib.dump(model, settings.model_path)
+                    logger.info(
+                        "Modelo carregado e salvo via mlflow.sklearn.load_model: %s",
+                        settings.model_path,
+                    )
+                    model_downloaded = True
+                except Exception as e2:
+                    logger.error("mlflow.sklearn.load_model falhou: %s", e2)
+
+            if not model_downloaded:
+                raise RuntimeError(
+                    "Nao foi possivel baixar o modelo do MLflow. "
+                    "Verifique se os experimentos foram executados e se ha modelos em mlruns/"
+                )
+
+            # Atualiza o config com o run_id usado
+            if config and "source" not in config.get("production", {}):
+                _update_config_run_id(run_id)
+
+        except ImportError as e:
+            raise RuntimeError(
+                "MLflow nao instalado. Instale com: pip install mlflow"
+            ) from e
+        except Exception as e:
+            raise RuntimeError(f"Erro ao baixar modelo do MLflow: {e}") from e
+    else:
         raise FileNotFoundError(
-            f"Production model artifact not found: {settings.model_path}"
+            f"Production model artifact not found: {settings.model_path}\n"
+            "Execute com --force-download ou rode o setup completo para baixar do MLflow."
         )
 
     if not settings.metadata_path.exists():
@@ -225,6 +416,23 @@ def materialize_production_model(
         )
 
     return settings.model_path
+
+
+def _update_config_run_id(run_id: str) -> None:
+    """Adiciona o run_id ao config.yaml."""
+    import re
+
+    content = CONFIG_PATH.read_text(encoding="utf-8")
+
+    # Adiciona secao source apos active_model
+    if "source:" not in content:
+        content = re.sub(
+            r"(active_model:\s*\S+\n)",
+            f"\\1  source:\n    run_id: {run_id}\n",
+            content,
+        )
+        CONFIG_PATH.write_text(content, encoding="utf-8")
+        logger.info("Config atualizado com run_id: %s", run_id)
 
 
 def load_production_model(

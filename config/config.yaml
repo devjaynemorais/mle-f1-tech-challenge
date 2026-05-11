@@ -108,6 +108,8 @@ mlflow:
   tracking_uri: sqlite:///mlflow.db
 production:
   active_model: mlp_optuna_prod
+  source:
+    run_id: cc4aecfba8a94bb4a4c887f867342080
   models:
     mlp_optuna_prod:
       display_name: MLP Optuna

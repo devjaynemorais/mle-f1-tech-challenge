@@ -37,7 +37,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def prepare_production_model(force_download: bool = False) -> Path:
+def prepare_production_model(force_download: bool = True) -> Path:
+    """Prepara o modelo de producao, baixando do MLflow se necessario.
+
+    Args:
+        force_download: Se True, baixa o modelo do MLflow mesmo que exista localmente.
+                       Padrao é True para garantir que o modelo esteja sempre atualizado.
+    """
     settings = load_production_settings(CONFIG_PATH, workspace_root=BASE_DIR)
     local_artifact_dir = materialize_production_model(
         settings,

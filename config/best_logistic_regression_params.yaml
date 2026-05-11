@@ -1,0 +1,93 @@
+data:
+  raw_path: data/raw/Telco_customer_churn.xlsx
+  target: Churn Value
+  test_size: 0.3
+  random_state: 42
+  drop_cols:
+  - Country
+  - State
+  - Lat Long
+  - Churn Label
+  - Churn Reason
+  - Count
+  meta_cols:
+  - CLTV
+  - CustomerID
+features:
+  engineering:
+    drop_churn_score: true
+    add_engagement_score: false
+    add_tenure_group: false
+    add_tenure_log: false
+    add_contract_ordinal: false
+    add_family_stability: false
+    add_fiber_no_support: false
+    add_support_gap_count: false
+    add_payment_automatic_flag: false
+    add_electronic_check_flag: false
+    add_paperless_echeck_flag: false
+    add_price_pressure_ratio: false
+  geo:
+    strategy: drop
+preprocessing:
+  scaler:
+    type: standard
+    params:
+      with_mean: false
+model:
+  name: logistic_regression
+  params:
+    C: 0.44426308744001647
+    max_iter: 1000
+    class_weight: null
+cv:
+  type: stratified_kfold
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+  n_jobs: 1
+  scoring:
+    pr_auc: average_precision
+    roc_auc: roc_auc
+    recall: recall
+    precision: precision
+    f1_score: f1
+tracking:
+  experiment_name: evaluation-logistic
+  tracking_uri: sqlite:///mlflow.db
+tuning:
+  primary_metric: pr_auc
+  direction: maximize
+  n_trials: 25
+  timeout_seconds: 1800
+  convergence_patience_trials: 50
+  convergence_min_improvement: 0.005
+  search_space:
+    C:
+      low: 0.01
+      high: 10.0
+      log: true
+    class_weight:
+    - balanced
+    - null
+evaluation:
+  threshold: 0.5
+  activation_cost: 50.0
+  retention_rate: 0.1
+optuna_result:
+  source_config: config\experiments\optuna_reglog.yaml
+  primary_metric: pr_auc
+  best_metrics:
+    pr_auc_mean: 0.6796094600688324
+    pr_auc_std: 0.016905092696926114
+    roc_auc_mean: 0.8577372796535354
+    roc_auc_std: 0.00936239650442322
+    recall_mean: 0.5779649615395864
+    recall_std: 0.03716490482492293
+    precision_mean: 0.6554645349222985
+    precision_std: 0.019350047016841926
+    f1_score_mean: 0.6139015889581264
+    f1_score_std: 0.026923885162219437
+    fit_time_mean: 0.04059677124023438
+    score_time_mean: 0.01907458305358887
+  best_trial_number: 19
