@@ -95,8 +95,10 @@ def extract_best_run_id() -> str | None:
         from src.utils.exp import resolve_tracking_uri
 
         config = _load_config()
+        env_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
         tracking_uri = resolve_tracking_uri(
-            config.get("mlflow", {}).get("tracking_uri", "sqlite:///mlflow.db"),
+            env_tracking_uri
+            or config.get("mlflow", {}).get("tracking_uri", "sqlite:///mlflow.db"),
             workspace_root=BASE_DIR,
         )
         mlflow.set_tracking_uri(tracking_uri)
