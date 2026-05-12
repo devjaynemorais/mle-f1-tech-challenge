@@ -106,7 +106,7 @@ A frequência diária permite:
 | | - Camada oculta (64 neurônios, ReLU) |
 | | - Camada de saída (1 neurônio, sigmoid) |
 | | - Treino com early stopping |
-| `train_model.py` | Pipeline de treinamento com validação |
+| `run_train.py` | Pipeline de treinamento com validação |
 | `predict_model.py` | Script de inferência em batch |
 
 **Arquitetura do MLP:**
