@@ -15,18 +15,18 @@ data:
   - CustomerID
 features:
   engineering:
-    drop_churn_score: true
-    add_engagement_score: false
-    add_tenure_group: false
-    add_tenure_log: false
-    add_contract_ordinal: false
-    add_family_stability: false
-    add_fiber_no_support: false
-    add_support_gap_count: false
-    add_payment_automatic_flag: false
-    add_electronic_check_flag: false
-    add_paperless_echeck_flag: false
-    add_price_pressure_ratio: false
+    drop_churn_score: false
+    add_engagement_score: true
+    add_tenure_group: true
+    add_tenure_log: true
+    add_contract_ordinal: true
+    add_family_stability: true
+    add_fiber_no_support: true
+    add_support_gap_count: true
+    add_payment_automatic_flag: true
+    add_electronic_check_flag: true
+    add_paperless_echeck_flag: true
+    add_price_pressure_ratio: true
   geo:
     strategy: drop
 preprocessing:
@@ -37,7 +37,7 @@ preprocessing:
 model:
   name: logistic_regression
   params:
-    C: 0.44426308744001647
+    C: 0.865470221554479
     max_iter: 1000
     class_weight: null
 cv:
@@ -78,16 +78,16 @@ optuna_result:
   source_config: config\experiments\optuna_reglog.yaml
   primary_metric: pr_auc
   best_metrics:
-    pr_auc_mean: 0.6796094600688324
-    pr_auc_std: 0.016905092696926114
-    roc_auc_mean: 0.8577372796535354
-    roc_auc_std: 0.00936239650442322
-    recall_mean: 0.5779649615395864
-    recall_std: 0.03716490482492293
-    precision_mean: 0.6554645349222985
-    precision_std: 0.019350047016841926
-    f1_score_mean: 0.6139015889581264
-    f1_score_std: 0.026923885162219437
-    fit_time_mean: 0.04059677124023438
-    score_time_mean: 0.01907458305358887
-  best_trial_number: 19
+    pr_auc_mean: 0.9398219839015433
+    pr_auc_std: 0.01094068324091484
+    roc_auc_mean: 0.9760698420886079
+    roc_auc_std: 0.004695874602198751
+    recall_mean: 0.8417390541370535
+    recall_std: 0.02046020134260871
+    precision_mean: 0.8549303786372364
+    precision_std: 0.01558689898148868
+    f1_score_mean: 0.8481676457617926
+    f1_score_std: 0.015401123253549615
+    fit_time_mean: 0.04184169769287109
+    score_time_mean: 0.021104145050048827
+  best_trial_number: 15

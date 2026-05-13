@@ -50,7 +50,6 @@ O `make train` e o `make compose-train` **não treinam o modelo** — eles mater
 
 ```bash
 make env               # cria o ambiente virtual
-make experiment        # executa pipeline de experimentação
 make train             # treina MLP a partir de best_params.
 make setup             # executa todos os experimentos
 make lint              # linting com ruff
@@ -154,7 +153,7 @@ O projeto tem **cinco fluxos independentes:**
 
 | # | Fluxo | Quando usar | Como executar |
 |---|---|---|---|
-| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | `make experiment` ou Notebooks Jupyter |
+| 1 | [Experimento](#-1-experimento) | Explorar dados, features e modelos | `make setup` ou Notebooks Jupyter |
 | 2 | [Treino](#-2-treino) | Treinar e materializar o modelo de produção | `make train` ou Docker |
 | 3 | [Inferência](#-3-inferência) | Avaliar o modelo no conjunto de teste | `make inference` |
 | 4 | [API](#-4-api-fastapi) | Servir predições batch em produção | `make api` ou Docker |
@@ -170,9 +169,9 @@ Duas formas de executar:
 
 **Via script** (recomendado para reprodutibilidade):
 ```bash
-make experiment
+make setup
 ```
-Executa baseline → FE rounds 1-3 → feature selection → RandomSearch → Optuna e grava `config/best_params.yaml` com os melhores hiperparâmetros do MLP.
+Executa baseline → FE rounds 1-3 → feature selection  → Optuna e grava `config/best_params.yaml` com os melhores hiperparâmetros do MLP.
 
 **Via notebooks** (para análise interativa):
 ```bash
@@ -190,7 +189,7 @@ uv run jupyter notebook
 |---|---|
 | `01_exploratory_data_analysis.ipynb` | EDA completa — qualidade, distribuição, correlações |
 | `02_experimentation.ipynb` | Baselines e experimentação com features e hiperparâmetros |
-| `03_modelo_mvp.ipynb` | Modelo final com Optuna + registro no MLflow + análise de fairness |
+| `03_modelo_mvp.ipynb` | Análise Econômica + Threshold + Análise de Fairness |
 
 ---
 
@@ -207,14 +206,6 @@ make train
 ```
 
 > **Pré-requisito:** `config/best_params.yaml` presente (já versionado no repositório com defaults). Para atualizar os hiperparâmetros com novos resultados de Optuna, execute `make experiment` antes.
-
-### `make setup` — só materializa
-
-Apenas baixa os artefatos de um run já registrado no MLflow para `models/production/`. Útil quando o `run_id` em `config/config.yaml` já é válido e você quer apenas servir a API.
-
-```bash
-make setup
-```
 
 ### Docker
 

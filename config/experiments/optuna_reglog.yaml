@@ -19,18 +19,18 @@ data:
 
 features:
   engineering:
-    drop_churn_score: true
-    add_engagement_score: false
-    add_tenure_group: false
-    add_tenure_log: false
-    add_contract_ordinal: false
-    add_family_stability: false
-    add_fiber_no_support: false
-    add_support_gap_count: false
-    add_payment_automatic_flag: false
-    add_electronic_check_flag: false
-    add_paperless_echeck_flag: false
-    add_price_pressure_ratio: false
+    drop_churn_score: false
+    add_engagement_score: true
+    add_tenure_group: true
+    add_tenure_log: true
+    add_contract_ordinal: true
+    add_family_stability: true
+    add_fiber_no_support: true
+    add_support_gap_count: true
+    add_payment_automatic_flag: true
+    add_electronic_check_flag: true
+    add_paperless_echeck_flag: true
+    add_price_pressure_ratio: true
   geo:
     strategy: drop
 
@@ -78,7 +78,6 @@ tuning:
       log: true
     class_weight:
       - balanced
-      - null
 
 evaluation:
   threshold: 0.5

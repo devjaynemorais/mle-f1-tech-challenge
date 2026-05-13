@@ -15,18 +15,18 @@ data:
   - CustomerID
 features:
   engineering:
-    drop_churn_score: true
-    add_engagement_score: false
-    add_tenure_group: false
-    add_tenure_log: false
-    add_contract_ordinal: false
-    add_family_stability: false
-    add_fiber_no_support: false
-    add_support_gap_count: false
-    add_payment_automatic_flag: false
-    add_electronic_check_flag: false
-    add_paperless_echeck_flag: false
-    add_price_pressure_ratio: false
+    drop_churn_score: false
+    add_engagement_score: true
+    add_tenure_group: true
+    add_tenure_log: true
+    add_contract_ordinal: true
+    add_family_stability: true
+    add_fiber_no_support: true
+    add_support_gap_count: true
+    add_payment_automatic_flag: true
+    add_electronic_check_flag: true
+    add_paperless_echeck_flag: true
+    add_price_pressure_ratio: true
   geo:
     strategy: drop
 preprocessing:
@@ -43,13 +43,13 @@ model:
     n_jobs: 1
     n_estimators: 250
     max_depth: 4
-    learning_rate: 0.02028527332925117
-    min_child_weight: 2
-    subsample: 0.8
-    colsample_bytree: 1.0
-    gamma: 0.4
-    reg_alpha: 0.2
-    reg_lambda: 4.063683404878093
+    learning_rate: 0.0290126075096391
+    min_child_weight: 1
+    subsample: 1.0
+    colsample_bytree: 0.9
+    gamma: 0.6
+    reg_alpha: 0.5
+    reg_lambda: 3.428007642179676
     scale_pos_weight: 2.7691131498470947
 cv:
   type: stratified_kfold
@@ -118,16 +118,16 @@ optuna_result:
   source_config: config\experiments\optuna_xgb.yaml
   primary_metric: pr_auc
   best_metrics:
-    pr_auc_mean: 0.6929882948895928
-    pr_auc_std: 0.018435162383338297
-    roc_auc_mean: 0.862769236362454
-    roc_auc_std: 0.010866421785361194
-    recall_mean: 0.8149717761984148
-    recall_std: 0.023773424789131425
-    precision_mean: 0.5331816184774525
-    precision_std: 0.023362936404136128
-    f1_score_mean: 0.6445296865333019
-    f1_score_std: 0.023625081221719652
-    fit_time_mean: 0.17130861282348633
-    score_time_mean: 0.021921682357788085
-  best_trial_number: 17
+    pr_auc_mean: 0.9602764732332381
+    pr_auc_std: 0.00881343042151914
+    roc_auc_mean: 0.9843232339320227
+    roc_auc_std: 0.0033873178566566236
+    recall_mean: 0.9533502968617473
+    recall_std: 0.021871163885900713
+    precision_mean: 0.8046867407992455
+    precision_std: 0.005969370177251077
+    f1_score_mean: 0.8725403211419875
+    f1_score_std: 0.006416253985039575
+    fit_time_mean: 0.12383785247802734
+    score_time_mean: 0.02426939010620117
+  best_trial_number: 10

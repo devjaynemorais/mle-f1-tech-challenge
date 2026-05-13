@@ -1,4 +1,6 @@
 import sys
+import types
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -56,3 +58,70 @@ def test_execute_setup_runs_experiment_suites_and_optuna_in_expected_order(monke
         ("optuna", expected_optuna_xgb, expected_optuna_xgb, True),
         ("optuna", expected_optuna_reglog, expected_optuna_reglog, True),
     ]
+
+
+def test_extract_best_run_id_prefers_env_tracking_uri(monkeypatch):
+    import run_setup
+
+    class FakeRunInfo:
+        run_id = "run-123"
+
+    class FakeRun:
+        info = FakeRunInfo()
+
+    class FakeExperiment:
+        experiment_id = "exp-1"
+        name = "Churn_Prediction_Pipeline"
+
+    events = []
+
+    fake_mlflow = types.ModuleType("mlflow")
+    fake_mlflow.set_tracking_uri = lambda uri: events.append(("tracking_uri", uri))
+    fake_mlflow.search_experiments = lambda: []
+
+    fake_tracking = types.ModuleType("mlflow.tracking")
+
+    class FakeMlflowClient:
+        def __init__(self, tracking_uri=None):
+            events.append(("client_uri", tracking_uri))
+
+        def get_experiment_by_name(self, name):
+            if name == "Churn_Prediction_Pipeline":
+                return FakeExperiment()
+            return None
+
+        def search_runs(self, experiment_ids, order_by=None, max_results=None):
+            events.append(("search_runs", experiment_ids, tuple(order_by or ()), max_results))
+            return [FakeRun()]
+
+    fake_tracking.MlflowClient = FakeMlflowClient
+
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    monkeypatch.setattr(
+        run_setup,
+        "_load_config",
+        lambda: {"mlflow": {"tracking_uri": "sqlite:///mlflow.db"}},
+    )
+    monkeypatch.setitem(sys.modules, "mlflow", fake_mlflow)
+    monkeypatch.setitem(sys.modules, "mlflow.tracking", fake_tracking)
+
+    run_id = run_setup.extract_best_run_id()
+
+    assert run_id == "run-123"
+    assert ("tracking_uri", "http://mlflow:5000") in events
+    assert ("client_uri", "http://mlflow:5000") in events
+
+
+def test_execute_setup_prefers_local_mlflow_server_when_running_outside_docker(monkeypatch):
+    import run_setup
+
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("RUNNING_IN_DOCKER", raising=False)
+    monkeypatch.setattr(run_setup, "_has_local_mlflow_server", lambda: True, raising=False)
+    monkeypatch.setattr(run_setup, "run_experiment_suite", lambda **kwargs: None)
+    monkeypatch.setattr(run_setup, "load_config", lambda path: {"loaded_from": str(path)})
+    monkeypatch.setattr(run_setup, "run_optuna", lambda config, config_path=None: None)
+
+    run_setup.execute_setup()
+
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://localhost:5000"
