@@ -24,6 +24,24 @@ from src.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def _resolve_input_path(
+    settings,
+    input_path: str | Path | None,
+) -> Path:
+    if input_path is not None:
+        return Path(input_path)
+
+    csv_input_path = settings.input_path
+    if csv_input_path.exists():
+        return csv_input_path
+
+    logger.info("Arquivo interim ausente; gerando via make_dataset: %s", csv_input_path)
+    from src.data.make_dataset import process_data
+
+    process_data()
+    return csv_input_path
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Executa inferencia offline usando o pipeline final do MLflow.",
@@ -47,7 +65,7 @@ def predict(input_path: str | Path | None = None, output_path: str | Path | None
     settings = load_production_settings(CONFIG_PATH, workspace_root=BASE_DIR)
     model = load_production_model(settings, prefer_local=True)
 
-    csv_input_path = Path(input_path) if input_path is not None else settings.input_path
+    csv_input_path = _resolve_input_path(settings, input_path)
     csv_output_path = (
         Path(output_path) if output_path is not None else settings.output_path
     )
