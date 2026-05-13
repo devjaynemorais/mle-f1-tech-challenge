@@ -1,5 +1,6 @@
 import sys
 import types
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -109,3 +110,18 @@ def test_extract_best_run_id_prefers_env_tracking_uri(monkeypatch):
     assert run_id == "run-123"
     assert ("tracking_uri", "http://mlflow:5000") in events
     assert ("client_uri", "http://mlflow:5000") in events
+
+
+def test_execute_setup_prefers_local_mlflow_server_when_running_outside_docker(monkeypatch):
+    import run_setup
+
+    monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
+    monkeypatch.delenv("RUNNING_IN_DOCKER", raising=False)
+    monkeypatch.setattr(run_setup, "_has_local_mlflow_server", lambda: True, raising=False)
+    monkeypatch.setattr(run_setup, "run_experiment_suite", lambda **kwargs: None)
+    monkeypatch.setattr(run_setup, "load_config", lambda path: {"loaded_from": str(path)})
+    monkeypatch.setattr(run_setup, "run_optuna", lambda config, config_path=None: None)
+
+    run_setup.execute_setup()
+
+    assert os.environ["MLFLOW_TRACKING_URI"] == "http://localhost:5000"

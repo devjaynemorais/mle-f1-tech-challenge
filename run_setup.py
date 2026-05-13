@@ -17,8 +17,10 @@ from __future__ import annotations
 import io
 import os
 import re
+import socket
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 if sys.platform == "win32" and hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -66,12 +68,51 @@ OPTUNA_CONFIGS: list[str] = [
     "optuna_reglog.yaml",
 ]
 
+DEFAULT_LOCAL_MLFLOW_URI = "http://localhost:5000"
+
 
 def _resolve_experiment_paths(file_names: list[str]) -> list[str]:
     return [str((EXPERIMENTS_DIR / file_name).resolve()) for file_name in file_names]
 
 
+def _has_local_mlflow_server(tracking_uri: str = DEFAULT_LOCAL_MLFLOW_URI) -> bool:
+    parsed = urlparse(tracking_uri)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname not in {
+        "localhost",
+        "127.0.0.1",
+    }:
+        return False
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((parsed.hostname, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _bootstrap_tracking_uri() -> str | None:
+    env_tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if env_tracking_uri:
+        return env_tracking_uri
+
+    if os.environ.get("RUNNING_IN_DOCKER"):
+        return None
+
+    if _has_local_mlflow_server():
+        os.environ["MLFLOW_TRACKING_URI"] = DEFAULT_LOCAL_MLFLOW_URI
+        print(
+            "MLflow local detectado em "
+            f"{DEFAULT_LOCAL_MLFLOW_URI}; registrando runs nesse servidor."
+        )
+        return DEFAULT_LOCAL_MLFLOW_URI
+
+    return None
+
+
 def execute_setup() -> None:
+    _bootstrap_tracking_uri()
+
     for suite_file_names in EXPERIMENT_SUITES:
         config_paths = _resolve_experiment_paths(suite_file_names)
         print(f"\nExecutando suite: {', '.join(Path(path).name for path in config_paths)}")
@@ -87,6 +128,7 @@ def execute_setup() -> None:
 def extract_best_run_id() -> str | None:
     """Extrai o run_id do melhor modelo do experimento de producao."""
     print(f"\n{'=' * 40}\nExtraindo run_id do melhor modelo\n{'=' * 40}")
+    _bootstrap_tracking_uri()
 
     try:
         import mlflow
@@ -196,6 +238,7 @@ def _load_config() -> dict:
 def materialize_models() -> None:
     """Materializa os modelos de producao a partir do MLflow."""
     print("\nMaterializando modelos de producao...")
+    _bootstrap_tracking_uri()
 
     # Tenta extrair o run_id primeiro
     run_id = extract_best_run_id()
