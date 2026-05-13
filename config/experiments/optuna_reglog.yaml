@@ -78,7 +78,6 @@ tuning:
       log: true
     class_weight:
       - balanced
-      - null
 
 evaluation:
   threshold: 0.5
